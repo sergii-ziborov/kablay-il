@@ -17,7 +17,7 @@ This is the **public source repository for the iOS application**, version **1.0.
 3. **Choose a professional.** Compare proposals, price, profile, verification labels, portfolio and reviews. Message the professional and record the agreed work.
 4. **Finish with a record.** Confirm the result and amount paid, then leave a review tied to completed work.
 
-The **Pro workspace** has four areas: *Jobs* for relevant requests, *My work* for accepted and completed jobs, *Chats* for client conversations, and *Profile* for availability, credits, statistics and the public portfolio. Credits and a 30-day Premium period can be purchased with StoreKit; the server verifies Apple transactions before changing an account balance.
+The **Pro workspace** has four areas: *Jobs* for relevant requests, *My work* for accepted and completed jobs, *Chats* for client conversations, and *Profile* for availability, credits, statistics and the public portfolio. Credit packs and a monthly auto-renewing Premium subscription can be purchased with StoreKit; the server verifies Apple transactions before changing an account balance or entitlement. The purchase screen shows Apple's local price and renewal terms, and provides a restore option.
 
 ## Screenshots
 
@@ -32,6 +32,8 @@ These are captures of the running app. The full gallery has **25 screens** acros
 | <a href="docs/app-store/screenshots/04-specialist.png"><img src="docs/app-store/screenshots/04-specialist.png" width="190" alt="Specialist profile"></a> | <a href="docs/app-store/screenshots/pro-01-workspace.jpg"><img src="docs/app-store/screenshots/pro-01-workspace.jpg" width="190" alt="Professional profile and credits"></a> |
 
 **[Browse all screenshots by device and language →](docs/gallery.md)**
+
+The App Store product-page [header and search images](docs/app-store/creative-assets/README.md) are available in English, Russian and Hebrew. They use the screenshots above and include the source generator and exact pixel dimensions.
 
 ## What is included
 
