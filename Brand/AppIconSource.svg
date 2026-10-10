@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#EF303E"/>
+  <text x="512" y="625" text-anchor="middle"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="610" font-weight="900" letter-spacing="-28" fill="#FFFFFF">K</text>
+  <text x="512" y="804" text-anchor="middle"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="108" font-weight="800" letter-spacing="18" fill="#FFFFFF">IL</text>
+</svg>

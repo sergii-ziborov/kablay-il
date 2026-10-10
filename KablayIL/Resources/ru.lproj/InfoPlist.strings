@@ -1,0 +1,5 @@
+"NSCameraUsageDescription" = "KABLAY использует камеру, чтобы прикрепить фотографии ремонта к заявке и портфолио.";
+"NSPhotoLibraryUsageDescription" = "KABLAY использует ваши фотографии для заявок на ремонт, чатов и портфолио специалистов.";
+"NSFaceIDUsageDescription" = "KABLAY использует Face ID, чтобы открыть ваши заявки, сообщения и рабочий кабинет специалиста.";
+"NSLocationWhenInUseUsageDescription" = "KABLAY использует геопозицию только когда вы сами просите подставить адрес и показать его на карте.";
+"CFBundleDisplayName" = "KABLAY IL";

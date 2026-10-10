@@ -1,0 +1,68 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      # macos-15 still defaults to Xcode 16.4. The existing app uses iOS 26
+      # symbols (including MKReverseGeocodingRequest); a runtime availability
+      # check does not make those symbols available in the old compiler SDK.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode and SDK
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Validate privacy and public documentation
+        run: |
+          plutil -lint KablayIL/Resources/PrivacyInfo.xcprivacy
+          plutil -lint KablayIL/KablayIL.entitlements
+          test -f docs/gallery.md
+          test -f docs/offline-behavior.md
+          test -f NOTICE
+      - name: Build
+        run: |
+          xcodebuild \
+            -project KablayIL.xcodeproj \
+            -scheme KablayIL \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Unit tests
+        run: |
+          xcodebuild \
+            -project KablayIL.xcodeproj \
+            -scheme KablayIL \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:KablayILTests \
+            test
+      - name: Save test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: TestResults.xcresult
+          if-no-files-found: ignore
+          retention-days: 3

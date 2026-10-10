@@ -1,0 +1,68 @@
+KABLAY PUBLIC SOURCE LICENSE
+Version 1.1 — 30 August 2026
+
+Copyright © 2026 KABLAY. All rights reserved.
+
+IMPORTANT: THIS IS A SOURCE-AVAILABLE LICENSE, NOT AN OPEN-SOURCE LICENSE.
+NO RIGHTS ARE GRANTED UNDER THE MIT LICENSE.
+
+1. Limited evaluation permission
+
+Subject to every term below, KABLAY grants you a personal, revocable,
+non-exclusive, non-transferable permission to view the source code, download
+one copy, and build or run it in a non-production environment solely for
+internal evaluation, security review, or educational study.
+
+2. Restrictions
+
+Unless KABLAY gives you prior written permission, you may not:
+
+  a. use the software, in whole or in part, in production or for any commercial
+     purpose;
+  b. copy or modify the software except as strictly necessary for the limited
+     evaluation described in Section 1;
+  c. distribute, publish, sublicense, sell, lease, or otherwise provide the
+     software or a derivative work to any third party;
+  d. operate the software for others, including as a hosted service, software as
+     a service, marketplace, or managed service;
+  e. use the software or its design to create, train, support, or improve a
+     competing product or service;
+  f. remove or alter copyright, license, attribution, or proprietary notices;
+  g. use the KABLAY name, logos, wordmarks, trade dress, domains, or other brand
+     identifiers.
+
+3. No implied rights
+
+All rights not expressly granted are reserved by KABLAY. Possession of a copy,
+access to the public repository, or the ability to fork the repository does not
+grant additional copyright, patent, trademark, or commercial rights.
+
+4. Third-party software
+
+Third-party components included in or used by this repository remain governed
+by their respective licenses. This license applies only to material owned by
+KABLAY and does not limit rights granted directly by a third-party licensor.
+
+5. Termination
+
+The permission in Section 1 terminates automatically if you breach this
+license. On termination, you must stop using the software and delete every copy
+in your possession or control, except where retention is required by law.
+
+6. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+7. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, KABLAY AND ITS CONTRIBUTORS WILL NOT BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL,
+OR OTHER DAMAGES ARISING FROM THE SOFTWARE OR THIS LICENSE, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGES.
+
+8. Separate licenses
+
+KABLAY may offer commercial, production, distribution, or other rights under a
+separate written agreement. Contact the repository owner to request one.

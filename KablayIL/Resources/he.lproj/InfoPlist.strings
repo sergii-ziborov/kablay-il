@@ -1,0 +1,5 @@
+"NSCameraUsageDescription" = "KABLAY משתמשת במצלמה כדי לצרף תמונות של התיקון לבקשה ולתיק העבודות.";
+"NSPhotoLibraryUsageDescription" = "KABLAY משתמשת בתמונות שלכם עבור בקשות תיקון, צ׳אט ותיקי עבודות של בעלי מקצוע.";
+"NSFaceIDUsageDescription" = "KABLAY משתמשת ב-Face ID כדי לפתוח את הבקשות, ההודעות ואזור העבודה המקצועי שלכם.";
+"NSLocationWhenInUseUsageDescription" = "KABLAY משתמשת במיקום רק כאשר אתם מבקשים למלא את כתובת השירות ולהציג אותה במפה.";
+"CFBundleDisplayName" = "KABLAY IL";

@@ -1,0 +1,15 @@
+{
+  "openapi": "3.1.0",
+  "version": "1.0.0",
+  "source": "https://api.kablay.co.il/openapi/mobile-v1.json",
+  "schemas": {
+    "Task": ["id", "title", "status", "created_at"],
+    "TaskDetailResponse": ["task", "proposals"],
+    "Proposal": ["id"],
+    "Specialist": ["id"],
+    "Completion": ["specialist_final_amount", "specialist_submitted_at", "media"],
+    "Notification": ["id", "kind", "created_at"],
+    "CreditAccount": ["balance", "premium", "transactions"],
+    "Catalog": ["version", "generated_at", "categories"]
+  }
+}
