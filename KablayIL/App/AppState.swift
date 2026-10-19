@@ -604,7 +604,7 @@ final class AppState {
         isLoadingNotifications = true
         defer { isLoadingNotifications = false }
         do {
-            notifications = try await api.fetchNotifications(token: session.token)
+            notifications = try await api.fetchNotifications(token: session.token, role: session.user.role)
             OfflineDataStore.saveDeferred(notifications, key: "notifications", accountID: session.user.id)
         } catch {
             guard !Self.isExpectedCancellation(error) else { return }

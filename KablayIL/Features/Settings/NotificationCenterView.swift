@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct NotificationCenterView: View {
     @Environment(AppState.self) private var appState
@@ -41,32 +42,119 @@ struct NotificationCenterView: View {
         .refreshable { await appState.loadNotifications() }
         .task { await appState.loadNotifications() }
         .listStyle(.plain)
+        .listRowSeparator(.hidden)
+        .scrollContentBackground(.hidden)
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(appState.locale.text(he: "התראות", ru: "Уведомления", en: "Notifications"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(appState.locale.text(he: "סימון הכל", ru: "Прочитать все", en: "Mark all read")) {
                     Task { await appState.markNotificationsRead() }
                 }
-                .font(.caption)
+                .font(.subheadline.weight(.semibold))
                 .disabled(appState.notifications.isEmpty)
             }
         }
     }
 
     private func notificationRow(_ notification: AppNotification) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-                Image(systemName: notification.systemImage)
-                    .foregroundStyle(notification.isRead ? Color.secondary : Brand.red)
-                    .frame(width: 40, height: 40)
-                    .background((notification.isRead ? Color.secondary : Brand.red).opacity(0.10), in: .circle)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(notification.title.value(for: appState.locale)).font(.headline)
-                    Text(notification.body.value(for: appState.locale)).font(.subheadline).foregroundStyle(.secondary)
-                    Text(notification.createdAt, style: .relative).font(.caption).foregroundStyle(.tertiary)
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: displayIcon(notification))
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(notification.isRead ? Color.primary : Brand.red)
+                .frame(width: 44, height: 44)
+                .background((notification.isRead ? Color.primary : Brand.red).opacity(0.12), in: .circle)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(displayTitle(notification))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if !notification.isRead {
+                        Text(appState.locale.text(he: "חדש", ru: "Новое", en: "New"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Brand.red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Brand.red.opacity(0.12), in: Capsule())
+                    }
                 }
-                if !notification.isRead { Circle().fill(Brand.red).frame(width: 8, height: 8) }
+                Text(displayBody(notification))
+                    .font(.subheadline)
+                    .foregroundStyle(Color.primary.opacity(notification.isRead ? 0.76 : 0.90))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(notification.createdAt.formatted(
+                    Date.FormatStyle(date: .abbreviated, time: .shortened)
+                        .locale(appState.locale.locale)
+                ))
+                .font(.caption)
+                .foregroundStyle(Color.primary.opacity(0.68))
             }
-            .padding(.vertical, 5)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(Brand.red.opacity(notification.isRead ? 0 : 0.25), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private func displayTitle(_ notification: AppNotification) -> String {
+        guard notification.title.en == "Request update" else {
+            return notification.title.value(for: appState.locale)
+        }
+        switch notification.kind {
+        case "new_jobs":
+            return appState.session?.user.role == .admin
+                ? appState.locale.text(he: "נוצרה הזמנה חדשה", ru: "Создан новый заказ", en: "New request created")
+                : appState.locale.text(he: "הזמנה חדשה מתאימה", ru: "Новый подходящий заказ", en: "New matching job")
+        case "task_updates":
+            return appState.locale.text(he: "ההצעה שלכם נבחרה", ru: "Ваш отклик выбран", en: "Your offer was selected")
+        case "registrations":
+            return notification.id.contains("specialist.registered")
+                ? appState.locale.text(he: "בעל מקצוע חדש נרשם", ru: "Зарегистрирован новый мастер", en: "New professional registered")
+                : appState.locale.text(he: "משתמש חדש נרשם", ru: "Зарегистрирован новый пользователь", en: "New user registered")
+        case "messages":
+            return appState.locale.text(he: "הודעה חדשה", ru: "Новое сообщение", en: "New message")
+        default:
+            return notification.title.value(for: appState.locale)
+        }
+    }
+
+    private func displayIcon(_ notification: AppNotification) -> String {
+        guard notification.systemImage == "bell.fill" else { return notification.systemImage }
+        switch notification.kind {
+        case "new_jobs": return "briefcase.fill"
+        case "task_updates": return "checkmark.circle.fill"
+        case "registrations": return "person.crop.circle.badge.plus"
+        case "messages": return "message.fill"
+        default: return notification.systemImage
+        }
+    }
+
+    private func displayBody(_ notification: AppNotification) -> String {
+        let body = notification.body.value(for: appState.locale)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !body.isEmpty { return body }
+        switch notification.kind {
+        case "new_jobs":
+            return appState.locale.text(he: "פתחו את ההזמנה כדי לראות את הפרטים.", ru: "Откройте заказ, чтобы посмотреть детали.", en: "Open the job to see the details.")
+        case "task_updates":
+            return appState.locale.text(he: "הלקוח בחר בהצעה שלכם. פתחו את פרטי העבודה.", ru: "Клиент выбрал ваш отклик. Откройте заказ.", en: "The client selected your offer. Open the job.")
+        case "registrations":
+            return appState.locale.text(he: "בדקו את החשבון בלוח הניהול.", ru: "Проверьте аккаунт в панели администратора.", en: "Review the account in the admin dashboard.")
+        case "messages":
+            return appState.locale.text(he: "פתחו את הצ׳אט כדי לקרוא את ההודעה.", ru: "Откройте чат, чтобы прочитать сообщение.", en: "Open the chat to read the message.")
+        default:
+            return appState.locale.text(he: "פתחו את הפרטים כדי לראות מה השתנה.", ru: "Откройте уведомление, чтобы узнать подробности.", en: "Open the notification for details.")
+        }
     }
 }
 
@@ -76,7 +164,10 @@ struct NotificationDestinationView: View {
 
     var body: some View {
         Group {
-            if appState.isProfessional, appState.workspaceMode == .professional {
+            if destination.kind == "task_assignment" {
+                NotificationTaskDestinationView(taskID: destination.taskID)
+            } else if appState.isProfessional,
+                      appState.workspaceMode == .professional || ["new_jobs", "task_updates"].contains(destination.kind) {
                 ProfessionalNotificationDestinationView(destination: destination)
             } else if let conversationID = destination.conversationID,
                       let conversation = appState.professionalConversations.first(where: { $0.id == conversationID }) {

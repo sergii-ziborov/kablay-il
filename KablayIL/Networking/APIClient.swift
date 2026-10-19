@@ -319,9 +319,9 @@ actor APIClient {
         }
     }
 
-    func fetchNotifications(token: String) async throws -> [AppNotification] {
+    func fetchNotifications(token: String, role: UserRole? = nil) async throws -> [AppNotification] {
         let response: NotificationsResponseDTO = try await request(path: "notifications", method: "GET", token: token)
-        return response.notifications.map(\.model)
+        return response.notifications.map { $0.model(for: role) }
     }
 
     func markNotificationRead(id: String, token: String) async throws {
@@ -1620,9 +1620,9 @@ private struct NotificationDTO: Decodable {
     let createdAt: String
     let readAt: String?
 
-    var model: AppNotification {
-        let specialist = payload.specialistName ?? "KABLAY"
-        let task = payload.taskTitle ?? ""
+    func model(for role: UserRole?) -> AppNotification {
+        let specialist = payload.specialistName?.nilIfBlank ?? "KABLAY"
+        let task = payload.taskTitle?.nilIfBlank ?? ""
         let content: (LocalizedValue, LocalizedValue, String)
         switch kind {
         case "task_assignment":
@@ -1635,19 +1635,71 @@ private struct NotificationDTO: Decodable {
                 ),
                 "person.crop.circle.badge.checkmark"
             )
-        case "chat_message", "message_received":
+        case "chat_message", "message_received", "messages":
             content = (
                 .init(he: "הודעה חדשה", ru: "Новое сообщение", en: "New message"),
-                .init(he: payload.body ?? "פתחו את הבקשה כדי לקרוא.", ru: payload.body ?? "Откройте заявку, чтобы прочитать.", en: payload.body ?? "Open the request to read it."),
+                .init(
+                    he: payload.body?.nilIfBlank ?? (task.isEmpty ? "פתחו את הצ׳אט כדי לקרוא את ההודעה." : "הודעה חדשה על הבקשה „\(task)”. פתחו את הצ׳אט."),
+                    ru: payload.body?.nilIfBlank ?? (task.isEmpty ? "Откройте чат, чтобы прочитать сообщение." : "Новое сообщение по заявке «\(task)». Откройте чат."),
+                    en: payload.body?.nilIfBlank ?? (task.isEmpty ? "Open the chat to read the message." : "New message about “\(task)”. Open the chat.")
+                ),
                 "message.fill"
             )
-        default:
+        case "new_jobs":
+            let admin = role == .admin
             content = (
-                .init(he: "עדכון בקשה", ru: "Обновление заявки", en: "Request update"),
-                .init(he: task, ru: task, en: task),
-                "bell.fill"
+                .init(
+                    he: admin ? "נוצרה הזמנה חדשה" : "הזמנה חדשה מתאימה",
+                    ru: admin ? "Создан новый заказ" : "Новый подходящий заказ",
+                    en: admin ? "New request created" : "New matching job"
+                ),
+                .init(
+                    he: task.isEmpty ? (admin ? "בדקו את ההזמנה בלוח הניהול." : "פתחו את ההזמנה כדי לראות את הפרטים.") : "הזמנה חדשה: „\(task)”. פתחו לפרטים.",
+                    ru: task.isEmpty ? (admin ? "Проверьте заказ в панели администратора." : "Откройте заказ, чтобы посмотреть детали.") : "Новая заявка: «\(task)». Откройте детали.",
+                    en: task.isEmpty ? (admin ? "Review the request in the admin dashboard." : "Open the job to see the details.") : "New request: “\(task)”. Open for details."
+                ),
+                "briefcase.fill"
+            )
+        case "task_updates":
+            content = (
+                .init(he: "ההצעה שלכם נבחרה", ru: "Ваш отклик выбран", en: "Your offer was selected"),
+                .init(
+                    he: task.isEmpty ? "הלקוח בחר בהצעה שלכם. פתחו את פרטי העבודה." : "הלקוח בחר בהצעה שלכם לבקשה „\(task)”.",
+                    ru: task.isEmpty ? "Клиент выбрал ваш отклик. Откройте заказ." : "Клиент выбрал ваш отклик на заявку «\(task)».",
+                    en: task.isEmpty ? "The client selected your offer. Open the job." : "The client selected your offer for “\(task)”."
+                ),
+                "checkmark.circle.fill"
+            )
+        case "registrations":
+            let specialistRegistered = id.contains("specialist.registered")
+            content = (
+                .init(
+                    he: specialistRegistered ? "בעל מקצוע חדש נרשם" : "משתמש חדש נרשם",
+                    ru: specialistRegistered ? "Зарегистрирован новый мастер" : "Зарегистрирован новый пользователь",
+                    en: specialistRegistered ? "New professional registered" : "New user registered"
+                ),
+                .init(
+                    he: specialistRegistered ? "בדקו את הפרופיל החדש בלוח הניהול." : "בדקו את החשבון החדש בלוח הניהול.",
+                    ru: specialistRegistered ? "Проверьте анкету мастера в панели администратора." : "Проверьте новый аккаунт в панели администратора.",
+                    en: specialistRegistered ? "Review the professional profile in the admin dashboard." : "Review the new account in the admin dashboard."
+                ),
+                "person.crop.circle.badge.plus"
+            )
+        default:
+            let serverTitle = payload.title?.nilIfBlank
+            let fallbackBody = payload.body?.nilIfBlank
+            content = (
+                .init(he: serverTitle ?? "עדכון חדש", ru: serverTitle ?? "Новое событие", en: serverTitle ?? "New update"),
+                .init(
+                    he: fallbackBody ?? (task.isEmpty ? "פתחו את הפרטים כדי לראות מה השתנה." : "עדכון בבקשה „\(task)”."),
+                    ru: fallbackBody ?? (task.isEmpty ? "Откройте уведомление, чтобы узнать подробности." : "Изменение по заявке «\(task)»."),
+                    en: fallbackBody ?? (task.isEmpty ? "Open the notification for details." : "Update about “\(task)”.")
+                ),
+                "bell.badge.fill"
             )
         }
+        let conversationID = payload.conversationId ?? URLComponents(string: payload.url ?? "")?
+            .queryItems?.first(where: { $0.name == "conversation" })?.value
         return AppNotification(
             id: id,
             title: content.0,
@@ -1656,7 +1708,7 @@ private struct NotificationDTO: Decodable {
             createdAt: parseAPIDate(createdAt) ?? .now,
             isRead: readAt != nil,
             taskID: taskId ?? payload.taskId,
-            conversationID: payload.conversationId,
+            conversationID: conversationID,
             kind: kind
         )
     }
@@ -1668,6 +1720,8 @@ private struct NotificationPayloadDTO: Decodable {
     let specialistName: String?
     let conversationId: String?
     let body: String?
+    let title: String?
+    let url: String?
 }
 
 private struct TasksResponseDTO: Decodable {

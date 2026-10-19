@@ -8,7 +8,7 @@
 
 [Website](https://kablay.co.il/en) · [Complete screenshot gallery](docs/gallery.md) · [Support](https://kablay.co.il/en/app-support) · [Privacy policy](https://kablay.co.il/en/privacy)
 
-This is the **public source repository for the iOS application**, version **1.0.0, build 44**. The marketplace server, deployment configuration, credentials, signing material, and App Review account details are kept separately. The source is available for inspection under the [KABLAY Public Source License](LICENSE); public visibility does not make it open source or grant commercial reuse.
+This is the **public source repository for the iOS application**, version **1.0.0, build 45**. The marketplace server, deployment configuration, credentials, signing material, and App Review account details are kept separately. The source is available for inspection under the [KABLAY Public Source License](LICENSE); public visibility does not make it open source or grant commercial reuse.
 
 ## How the app works
 
@@ -45,6 +45,7 @@ The App Store product-page [header and search images](docs/app-store/creative-as
 | Professional | Job feed, offers, work tracking, chat, profile and portfolio, credits, Premium, monthly work-journal exports |
 | Platform | SwiftUI, Hebrew RTL, Russian and English, Apple Maps, camera and photo library, push notifications and deep links, Face ID and app PIN |
 | Offline | Bundled categories and saved articles, specialists, recent requests, jobs, conversations and images with last-updated labels; local snapshots update in the background |
+| Notifications | Distinct new-job, selected-offer, message and registration notices with readable details, dates and unread status |
 
 Read the [offline freshness and retention policy](docs/offline-behavior.md) for exact refresh intervals and what remains available without a network.
 

@@ -720,6 +720,28 @@ final class KablayILTests: XCTestCase {
         XCTAssertTrue(notifications.first?.isRead == true)
     }
 
+    func testSparseNotificationsHaveDistinctReadableCopyAndConversationRoute() async throws {
+        let session = makeMockSession { _ in
+            """
+            {"notifications":[
+              {"id":"event:accepted:p1:u1","kind":"task_updates","task_id":"task-1","payload":{"title":"Job update","taskTitle":"Leaking kitchen tap","url":"https://kablay.co.il/he/tasks/task-1"},"created_at":"2026-10-15T10:00:00.000Z","read_at":null},
+              {"id":"event:task:task-2:u1","kind":"new_jobs","task_id":"task-2","payload":{"title":"New matching job","taskTitle":"Paint the bedroom"},"created_at":"2026-10-15T09:00:00.000Z","read_at":null},
+              {"id":"event:user.registered:u2:u1","kind":"registrations","task_id":null,"payload":{"title":"New user registered"},"created_at":"2026-10-15T08:00:00.000Z","read_at":null},
+              {"id":"event:message:m1:u1","kind":"messages","task_id":"task-3","payload":{"title":"New message","url":"https://kablay.co.il/he/chats?conversation=conversation-3"},"created_at":"2026-10-15T07:00:00.000Z","read_at":null}
+            ]}
+            """
+        }
+        let api = APIClient(apiBaseURL: URL(string: "https://example.test/")!, session: session)
+        let notifications = try await api.fetchNotifications(token: "token", role: .specialist)
+
+        XCTAssertEqual(notifications.map { $0.title.ru }, [
+            "Ваш отклик выбран", "Новый подходящий заказ", "Зарегистрирован новый пользователь", "Новое сообщение"
+        ])
+        XCTAssertTrue(notifications.allSatisfy { !$0.body.ru.isEmpty })
+        XCTAssertTrue(notifications[0].body.ru.contains("Leaking kitchen tap"))
+        XCTAssertEqual(notifications[3].conversationID, "conversation-3")
+    }
+
     func testBlogCatalogDecodesPublishedShapeWithoutCategoryField() async throws {
         let session = makeMockSession { _ in
             """
