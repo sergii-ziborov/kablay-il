@@ -1140,6 +1140,27 @@ final class KablayILTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testOnboardingUsesServerConfirmedSpecialistRole() async {
+        let user = SessionUser(id: "client-onboarding", name: "Dana", phone: "+972501234567", role: .client)
+        let session = makeMockSession { request in
+            XCTAssertEqual(request.url?.path, "/specialists/me")
+            XCTAssertEqual(request.httpMethod, "POST")
+            return """
+            {"specialist":{"id":"specialist-new"},"user":{"id":"client-onboarding","name":"Dana","phone":"+972501234567","role":"specialist"}}
+            """
+        }
+        let state = AppState(
+            api: APIClient(apiBaseURL: URL(string: "https://example.test/")!, session: session),
+            sessionStore: TestSessionStore(session: AuthSession(token: "onboarding-token", user: user))
+        )
+        let joined = await state.becomeProfessional(categories: ["plumbing"], city: "Tel Aviv", bio: "")
+        XCTAssertTrue(joined, state.errorMessage ?? "Onboarding failed without an error")
+        XCTAssertEqual(state.session?.user.role, .specialist)
+        XCTAssertEqual(state.workspaceMode, .professional)
+        state.signOut()
+    }
+
     func testBundledMobileContractContainsEveryCriticalSchema() {
         XCTAssertEqual(MobileContract.version, "1.0.0")
         XCTAssertEqual(
