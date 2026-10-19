@@ -93,9 +93,11 @@ struct RootView: View {
             if let url = activity.webpageURL { appState.handleUniversalLink(url) }
         }
         .task(id: appState.session?.token) {
+            await appState.restoreSavedSnapshots()
+            async let role: Void = appState.refreshSessionRole()
             async let content: Void = appState.refreshSavedContent()
             async let alerts: Void = appState.loadNotifications()
-            _ = await (content, alerts)
+            _ = await (role, content, alerts)
         }
     }
 }

@@ -13,7 +13,7 @@ final class ProductionAPICompatibilityTests: XCTestCase {
     }
 
     func testAttachmentFieldOrderWithObjectAnswers() async throws {
-        let leads = try await client("object").fetchProfessionalLeads(token: "fixture-only")
+        let leads = try await client("object").fetchProfessionalLeads(token: "fixture-only").items
         let lead = try XCTUnwrap(leads.first)
         XCTAssertEqual(leads.count, 1)
         XCTAssertEqual(lead.attachmentURLs.map(\.lastPathComponent),
@@ -22,14 +22,14 @@ final class ProductionAPICompatibilityTests: XCTestCase {
     }
 
     func testAttachmentFieldOrderWithSQLiteJSONStringAnswers() async throws {
-        let leads = try await client("string").fetchProfessionalLeads(token: "fixture-only")
+        let leads = try await client("string").fetchProfessionalLeads(token: "fixture-only").items
         let lead = try XCTUnwrap(leads.first)
         XCTAssertEqual(lead.attachmentURLs.map(\.lastPathComponent),
                        ["top.jpg", "attachment.jpg", "image.jpg", "photo.jpg", "file.jpg", "media.jpg"])
     }
 
     func testAbsentOptionalAttachmentsStayEmpty() async throws {
-        let leads = try await client("missing").fetchProfessionalLeads(token: "fixture-only")
+        let leads = try await client("missing").fetchProfessionalLeads(token: "fixture-only").items
         XCTAssertEqual(leads.count, 1)
         XCTAssertTrue(try XCTUnwrap(leads.first).attachmentURLs.isEmpty)
     }

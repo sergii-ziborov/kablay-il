@@ -77,6 +77,12 @@ actor APIClient {
         return response.user
     }
 
+    func fetchCurrentUser(token: String) async throws -> SessionUser {
+        struct Response: Decodable { let user: SessionUser }
+        let response: Response = try await request(path: "auth/me", method: "GET", token: token)
+        return response.user
+    }
+
     func logout(token: String) async throws {
         struct Response: Decodable { let ok: Bool }
         let response: Response = try await request(
@@ -868,7 +874,7 @@ actor APIClient {
         guard response.ok else { throw APIError.invalidResponse }
     }
 
-    func onboardProfessional(categories: [String], city: String, bio: String, token: String) async throws {
+    func onboardProfessional(categories: [String], city: String, bio: String, token: String) async throws -> SessionUser {
         struct Body: Encodable {
             let categories: [String]
             let city: String
@@ -876,14 +882,15 @@ actor APIClient {
             let bio: String
             let languages: [String]
         }
-        struct Response: Decodable { let specialist: SpecialistEnvelope }
+        struct Response: Decodable { let specialist: SpecialistEnvelope; let user: SessionUser }
         struct SpecialistEnvelope: Decodable { let id: String }
-        let _: Response = try await request(
+        let response: Response = try await request(
             path: "specialists/me",
             method: "POST",
             token: token,
             body: Body(categories: categories, city: city, radiusKM: 25, bio: bio, languages: ["he", "ru", "en"])
         )
+        return response.user
     }
 
     private func request<Response: Decodable, Body: Encodable>(

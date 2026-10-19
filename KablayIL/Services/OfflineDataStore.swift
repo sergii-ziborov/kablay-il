@@ -11,6 +11,11 @@ struct OfflineSnapshot<Value: Codable>: Codable {
 }
 
 enum OfflineDataStore {
+    // JSON encoding, decoding and atomic writes can take seconds for a warm
+    // account. Keep them serialized and off SwiftUI's main actor. Serialization
+    // also makes a later page's snapshot win over an earlier page's snapshot.
+    private static let ioQueue = DispatchQueue(label: "il.co.kablay.offline-snapshots", qos: .utility)
+
     private static var root: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("KABLAYOffline/v1", isDirectory: true)
@@ -25,6 +30,18 @@ enum OfflineDataStore {
         let url = fileURL(key: key, accountID: accountID, baseURL: baseURL)
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(OfflineSnapshot<Value>.self, from: data)
+    }
+
+    static func loadAsync<Value: Codable>(
+        _ type: Value.Type,
+        key: String,
+        accountID: String? = nil
+    ) async -> OfflineSnapshot<Value>? {
+        await withCheckedContinuation { continuation in
+            ioQueue.async {
+                continuation.resume(returning: load(type, key: key, accountID: accountID))
+            }
+        }
     }
 
     @discardableResult
@@ -54,9 +71,33 @@ enum OfflineDataStore {
         }
     }
 
+    /// Queue a complete immutable value snapshot without blocking a frame.
+    /// Callers already have fresh server data in memory; the returned date is
+    /// the timestamp that will be written with this snapshot.
+    @discardableResult
+    static func saveDeferred<Value: Codable>(
+        _ value: Value,
+        key: String,
+        accountID: String? = nil,
+        date: Date = .now
+    ) -> Date {
+        ioQueue.async {
+            _ = save(value, key: key, accountID: accountID, date: date)
+        }
+        return date
+    }
+
+    static func removeDeferred(key: String, accountID: String? = nil) {
+        ioQueue.async { remove(key: key, accountID: accountID) }
+    }
+
     static func removeAccount(_ id: String, baseURL: URL? = nil) {
         let directory = (baseURL ?? root).appendingPathComponent("account-\(digest(id))", isDirectory: true)
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    static func removeAccountDeferred(_ id: String) {
+        ioQueue.async { removeAccount(id) }
     }
 
     static func remove(key: String, accountID: String? = nil, baseURL: URL? = nil) {

@@ -193,10 +193,10 @@ struct AvailableLeadsView: View {
     }
 
     private func reload(force: Bool) async {
-        await appState.loadProfessionalProfile(force: force)
+        async let profile: Void = appState.loadProfessionalProfile(force: force)
         async let leads: Void = appState.loadProfessionalLeads(force: force)
         async let proposals: Void = appState.loadProfessionalProposals(force: force)
-        _ = await (leads, proposals)
+        _ = await (profile, leads, proposals)
     }
 }
 

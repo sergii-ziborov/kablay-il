@@ -33,7 +33,7 @@ struct KablayILApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background, appState.isAuthenticated {
                         appState.appLock.lock()
-                    } else if phase == .active {
+                    } else if phase == .active, appState.hasRestoredSavedSnapshots {
                         Task { await appState.refreshSavedContent() }
                     }
                 }

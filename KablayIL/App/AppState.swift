@@ -108,6 +108,7 @@ final class AppState {
     var specialistsLoadFailed = false
     var isLoadingNotifications = false
     var isLoadingBlog = false
+    private var isPreloadingBlog = false
     var isLoadingTasks = false
     var clientTasksLoadFailed = false
     var isLoadingProfessionalProfile = false
@@ -121,6 +122,9 @@ final class AppState {
     /// failed request look identical without it.
     var professionalLoadErrorMessage: String?
     var workspaceMode: WorkspaceMode
+    private var didRestoreSavedSnapshots = false
+    private var isRefreshingSavedContent = false
+    var hasRestoredSavedSnapshots: Bool { didRestoreSavedSnapshots }
     let notificationService = NotificationService()
     let appLock = AppLockService()
     let store = StoreService()
@@ -152,7 +156,7 @@ final class AppState {
         let storedSession = persistedSession?.token == "preview-token" ? nil : persistedSession
         if persistedSession?.token == "preview-token" { sessionStore.clearSession() }
         session = storedSession
-        workspaceMode = storedSession?.user.role == .specialist || storedSession?.user.role == .admin ? .professional : .client
+        workspaceMode = storedSession?.user.role == .specialist ? .professional : .client
         self.api = api
         self.sessionStore = sessionStore
         if let storedVisitorID = UserDefaults.standard.string(forKey: "kablay-visitor-id") {
@@ -162,17 +166,6 @@ final class AppState {
             UserDefaults.standard.set(generated, forKey: "kablay-visitor-id")
             visitorID = generated
         }
-        if let snapshot = OfflineDataStore.load([Specialist].self, key: "specialists") {
-            specialists = snapshot.value
-            specialistsUpdatedAt = snapshot.savedAt
-            specialistsShowingSavedCopy = true
-        }
-        if let snapshot = OfflineDataStore.load([BlogArticle].self, key: "articles") {
-            blogArticles = snapshot.value
-            blogUpdatedAt = snapshot.savedAt
-            blogShowingSavedCopy = true
-        }
-        if let userID = storedSession?.user.id { restorePrivateSnapshots(for: userID) }
         if storedSession != nil { appLock.onSessionRestored() }
         // Apple can hand the app a transaction at any time, so redeeming is
         // wired up for the whole session rather than only while a store screen
@@ -183,116 +176,124 @@ final class AppState {
         store.start()
     }
 
-    private func restorePrivateSnapshots(for userID: String) {
-        if let saved = OfflineDataStore.load([RepairTask].self, key: "client-tasks", accountID: userID) {
+    /// Restore the last good copy after the first frame. The disk and JSON
+    /// work runs on OfflineDataStore's queue, so a large cache cannot freeze
+    /// the launch animation or the first Pro tab.
+    func restoreSavedSnapshots() async {
+        guard !didRestoreSavedSnapshots else { return }
+        if let userID = session?.user.id { await restorePrivateSnapshots(for: userID) }
+        if let saved = await OfflineDataStore.loadAsync([Specialist].self, key: "specialists"),
+           specialistsUpdatedAt == nil {
+            specialists = saved.value
+            specialistsUpdatedAt = saved.savedAt
+            specialistsShowingSavedCopy = true
+        }
+        if let saved = await OfflineDataStore.loadAsync([BlogArticle].self, key: "articles"),
+           blogUpdatedAt == nil {
+            blogArticles = saved.value
+            blogUpdatedAt = saved.savedAt
+            blogShowingSavedCopy = true
+        }
+        didRestoreSavedSnapshots = true
+    }
+
+    private func restorePrivateSnapshots(for userID: String) async {
+        guard session?.user.id == userID else { return }
+        if isProfessional {
+            if let saved = await OfflineDataStore.loadAsync([ProfessionalLead].self, key: "professional-leads", accountID: userID),
+               session?.user.id == userID, professionalLeadsUpdatedAt == nil {
+                professionalLeads = saved.value
+                professionalLeadsUpdatedAt = saved.savedAt
+                professionalLeadsShowingSavedCopy = true
+            }
+            if let saved = await OfflineDataStore.loadAsync(ProfessionalProfile.self, key: "professional-profile", accountID: userID),
+               session?.user.id == userID, professionalProfileUpdatedAt == nil {
+                professionalProfile = saved.value
+                professionalProfileUpdatedAt = saved.savedAt
+                professionalProfileShowingSavedCopy = true
+            }
+            if let saved = await OfflineDataStore.loadAsync([ProfessionalProposal].self, key: "professional-proposals", accountID: userID),
+               session?.user.id == userID, professionalProposalsUpdatedAt == nil {
+                professionalProposals = saved.value
+                professionalProposalsUpdatedAt = saved.savedAt
+                professionalProposalsShowingSavedCopy = true
+            }
+            if let saved = await OfflineDataStore.loadAsync([ProfessionalConversation].self, key: "professional-conversations", accountID: userID),
+               session?.user.id == userID, professionalConversationsUpdatedAt == nil {
+                professionalConversations = saved.value
+                professionalConversationsUpdatedAt = saved.savedAt
+                professionalConversationsShowingSavedCopy = true
+            }
+            if let saved = await OfflineDataStore.loadAsync(ProfessionalStats.self, key: "professional-stats", accountID: userID),
+               session?.user.id == userID, professionalStatsUpdatedAt == nil {
+                professionalStats = saved.value
+                professionalStatsUpdatedAt = saved.savedAt
+                professionalStatsShowingSavedCopy = true
+            }
+        }
+        if let saved = await OfflineDataStore.loadAsync([RepairTask].self, key: "client-tasks", accountID: userID),
+           session?.user.id == userID, clientTasksUpdatedAt == nil {
             clientTasks = saved.value
             clientTasksUpdatedAt = saved.savedAt
             clientTasksShowingSavedCopy = true
         }
-        if let saved = OfflineDataStore.load([ProfessionalLead].self, key: "professional-leads", accountID: userID) {
-            professionalLeads = saved.value
-            professionalLeadsUpdatedAt = saved.savedAt
-            professionalLeadsShowingSavedCopy = true
+        if notifications.isEmpty,
+           let saved = await OfflineDataStore.loadAsync([AppNotification].self, key: "notifications", accountID: userID),
+           session?.user.id == userID {
+            notifications = saved.value
         }
-        if let saved = OfflineDataStore.load(ProfessionalProfile.self, key: "professional-profile", accountID: userID) {
-            professionalProfile = saved.value
-            professionalProfileUpdatedAt = saved.savedAt
-            professionalProfileShowingSavedCopy = true
-        }
-        if let saved = OfflineDataStore.load([ProfessionalProposal].self, key: "professional-proposals", accountID: userID) {
-            professionalProposals = saved.value
-            professionalProposalsUpdatedAt = saved.savedAt
-            professionalProposalsShowingSavedCopy = true
-        }
-        if let saved = OfflineDataStore.load([ProfessionalConversation].self, key: "professional-conversations", accountID: userID) {
-            professionalConversations = saved.value
-            professionalConversationsUpdatedAt = saved.savedAt
-            professionalConversationsShowingSavedCopy = true
-        }
-        if let saved = OfflineDataStore.load(ProfessionalStats.self, key: "professional-stats", accountID: userID) {
-            professionalStats = saved.value
-            professionalStatsUpdatedAt = saved.savedAt
-            professionalStatsShowingSavedCopy = true
-        }
-        notifications = OfflineDataStore.load([AppNotification].self, key: "notifications", accountID: userID)?.value ?? []
     }
 
     private func persistClientTasks(for userID: String) {
-        clientTasksUpdatedAt = OfflineDataStore.save(clientTasks, key: "client-tasks", accountID: userID) ?? .now
+        clientTasksUpdatedAt = OfflineDataStore.saveDeferred(clientTasks, key: "client-tasks", accountID: userID)
         clientTasksShowingSavedCopy = false
         prefetchTaskImages()
     }
 
     private func persistProfessionalProfile(for userID: String) {
         guard let professionalProfile else { return }
-        professionalProfileUpdatedAt = OfflineDataStore.save(
+        professionalProfileUpdatedAt = OfflineDataStore.saveDeferred(
             professionalProfile, key: "professional-profile", accountID: userID
-        ) ?? .now
+        )
         professionalProfileShowingSavedCopy = false
     }
 
-    private var specialistImageURLs: [URL] {
-        let avatars = specialists.compactMap(\.displayAvatarURL)
-        let covers = specialists.flatMap { $0.portfolioProjects.compactMap(\.displayCoverURL) }
-        let galleries = specialists.flatMap { specialist in
-            specialist.portfolioURLs + specialist.portfolioProjects.flatMap(\.photoURLs)
-        }
-        return avatars + covers + galleries
-    }
-
-    private var articleImageURLs: [URL] {
-        let covers = blogArticles.compactMap(\.coverURL)
-        let inlineImages = blogArticles.flatMap { article in
-            [article.content.he, article.content.ru, article.content.en]
-                .flatMap { ArticleContent.blocks(from: $0, baseURL: AppConfiguration.webBaseURL) }
-                .compactMap { block -> URL? in
-                    if case let .image(url) = block { return url }
-                    return nil
-                }
-        }
-        return covers + inlineImages
-    }
-
-    private var publicImageURLs: [URL] { specialistImageURLs + articleImageURLs }
-
-    private var taskImageURLs: [URL] {
-        var urls = professionalLeads.flatMap(\.attachmentURLs)
-        for task in clientTasks {
-            urls.append(contentsOf: task.attachmentURLs)
-            urls.append(contentsOf: task.proposals.compactMap(\.specialistAvatarURL))
-            if let avatar = task.acceptedSpecialist?.avatarURL { urls.append(avatar) }
-            if let completion = task.completion {
-                urls.append(contentsOf: completion.specialistPhotoURLs)
-                urls.append(contentsOf: completion.clientPhotoURLs)
-                urls.append(contentsOf: completion.expenseReceiptURLs)
-            }
-        }
-        return urls
-    }
-
     private func prefetchPublicImages() {
-        let specialists = specialistImageURLs
-        let articles = articleImageURLs
-        let keep = specialists + articles + taskImageURLs
-        Task(priority: .utility) {
+        let directory = specialists
+        let blog = blogArticles
+        let leads = professionalLeads
+        let tasks = clientTasks
+        Task.detached(priority: .utility) {
+            let specialists = OfflineImageTargets.specialists(directory)
+            let articles = OfflineImageTargets.articles(blog)
+            let keep = specialists + articles + OfflineImageTargets.tasks(leads, tasks)
             await OfflineImageStore.shared.prune(keeping: keep)
-            await OfflineImageStore.shared.prefetch(specialists)
-            await OfflineImageStore.shared.prefetch(articles)
+            await OfflineImageStore.shared.prefetch(specialists + articles)
         }
     }
 
     private func prefetchTaskImages() {
-        let urls = taskImageURLs
-        let keep = publicImageURLs + urls
-        Task(priority: .utility) {
+        let directory = specialists
+        let blog = blogArticles
+        let leads = professionalLeads
+        let tasks = clientTasks
+        Task.detached(priority: .utility) {
+            let urls = OfflineImageTargets.tasks(leads, tasks)
+            let keep = OfflineImageTargets.specialists(directory) + OfflineImageTargets.articles(blog) + urls
             await OfflineImageStore.shared.prune(keeping: keep)
             await OfflineImageStore.shared.prefetch(urls)
         }
     }
 
+    private func prefetchArticlePageImages(_ page: [BlogArticle]) {
+        Task.detached(priority: .utility) {
+            await OfflineImageStore.shared.prefetch(OfflineImageTargets.articles(page))
+        }
+    }
+
     var isAuthenticated: Bool { session != nil }
     var isProfessional: Bool {
-        session?.user.role == .specialist || session?.user.role == .admin
+        session?.user.role == .specialist
     }
     var requiresInitialAppLockSetup: Bool {
         Self.requiresInitialAppLockSetup(
@@ -303,23 +304,27 @@ final class AppState {
     var unreadCount: Int { notifications.filter { !$0.isRead }.count }
 
     func refreshSavedContent() async {
+        guard !isRefreshingSavedContent else { return }
+        isRefreshingSavedContent = true
+        defer { isRefreshingSavedContent = false }
+        if isProfessional {
+            async let profile: Void = loadProfessionalProfile()
+            async let leads: Void = loadProfessionalLeads()
+            async let proposals: Void = loadProfessionalProposals()
+            async let conversations: Void = loadProfessionalConversations()
+            _ = await (profile, leads, proposals, conversations)
+        }
         async let catalog: Void = loadServiceCatalog()
         async let directory: Void = loadSpecialists()
         async let articles: Void = loadBlogArticles()
         async let tasks: Void = loadClientTasks()
-        if isProfessional {
-            await loadProfessionalProfile()
-            async let leads: Void = loadProfessionalLeads()
-            async let proposals: Void = loadProfessionalProposals()
-            async let conversations: Void = loadProfessionalConversations()
-            _ = await (leads, proposals, conversations)
-        }
         _ = await (catalog, directory, articles, tasks)
     }
 
     @discardableResult
     func handleUniversalLink(_ url: URL) -> Bool {
         if url.scheme?.lowercased() == "kablay", url.host?.lowercased() == "billing" {
+            guard isProfessional else { return false }
             workspaceMode = .professional
             pendingBillingPage = url.pathComponents.contains("premium") ? .premium : .credits
             return true
@@ -332,6 +337,7 @@ final class AppState {
             ? Array(components.dropFirst())
             : components
         if route.count >= 2, route[0] == "pro", route[1] == "billing" {
+            guard isProfessional else { return false }
             workspaceMode = .professional
             pendingBillingPage = route.count >= 3 && route[2] == "premium" ? .premium : .credits
             return true
@@ -383,8 +389,8 @@ final class AppState {
             }
             try sessionStore.saveSession(authenticated)
             session = authenticated
-            restorePrivateSnapshots(for: authenticated.user.id)
-            workspaceMode = authenticated.user.role == .specialist || authenticated.user.role == .admin ? .professional : .client
+            Task(priority: .utility) { await restorePrivateSnapshots(for: authenticated.user.id) }
+            workspaceMode = authenticated.user.role == .specialist ? .professional : .client
             if workspaceMode == .client { clientTab = .account }
             appLock.onAuthenticated()
             return true
@@ -444,7 +450,7 @@ final class AppState {
         defer { isLoadingSpecialists = false }
         do {
             specialists = try await api.fetchAppSpecialists()
-            specialistsUpdatedAt = OfflineDataStore.save(specialists, key: "specialists") ?? .now
+            specialistsUpdatedAt = OfflineDataStore.saveDeferred(specialists, key: "specialists")
             specialistsShowingSavedCopy = false
             prefetchPublicImages()
         } catch {
@@ -495,10 +501,10 @@ final class AppState {
     ) async -> SpecialistProfileDetails? {
         do {
             let details = try await api.fetchSpecialistDetails(id: id)
-            OfflineDataStore.save(details, key: "specialist-details-\(id)")
+            OfflineDataStore.saveDeferred(details, key: "specialist-details-\(id)")
             return details
         } catch {
-            if let saved = OfflineDataStore.load(SpecialistProfileDetails.self, key: "specialist-details-\(id)") {
+            if let saved = await OfflineDataStore.loadAsync(SpecialistProfileDetails.self, key: "specialist-details-\(id)") {
                 return saved.value
             }
             if reportFailure { report(error) }
@@ -535,12 +541,13 @@ final class AppState {
             let complete = blogLoadedPage >= blogPages
             if complete { blogArticles.removeAll { !blogFreshIDs.contains($0.id) } }
             let savedAt = complete ? Date.now : (blogUpdatedAt ?? .now)
-            blogUpdatedAt = OfflineDataStore.save(blogArticles, key: "articles", date: savedAt) ?? savedAt
+            blogUpdatedAt = OfflineDataStore.saveDeferred(blogArticles, key: "articles", date: savedAt)
             blogShowingSavedCopy = !complete
+            prefetchArticlePageImages(result.items)
             prefetchPublicImages()
             // Let the first screen render immediately, then warm the remaining
             // article pages and their images for offline reading.
-            Task {
+            Task(priority: .utility) {
                 await Task.yield()
                 await preloadRemainingBlogArticles()
             }
@@ -567,17 +574,22 @@ final class AppState {
             let complete = blogLoadedPage >= blogPages
             if complete { blogArticles.removeAll { !blogFreshIDs.contains($0.id) } }
             let savedAt = complete ? Date.now : (blogUpdatedAt ?? .now)
-            blogUpdatedAt = OfflineDataStore.save(blogArticles, key: "articles", date: savedAt) ?? savedAt
+            if complete || blogLoadedPage.isMultiple(of: 5) {
+                blogUpdatedAt = OfflineDataStore.saveDeferred(blogArticles, key: "articles", date: savedAt)
+            }
             blogShowingSavedCopy = !complete
-            prefetchPublicImages()
+            prefetchArticlePageImages(result.items)
+            if complete { prefetchPublicImages() }
         } catch {
             blogShowingSavedCopy = !blogArticles.isEmpty
         }
     }
 
     private func preloadRemainingBlogArticles() async {
-        for _ in 0..<50 {
-            guard blogLoadedPage < blogPages else { return }
+        guard !isPreloadingBlog else { return }
+        isPreloadingBlog = true
+        defer { isPreloadingBlog = false }
+        while blogLoadedPage < blogPages, !Task.isCancelled {
             let previousPage = blogLoadedPage
             await loadMoreBlogArticles()
             guard blogLoadedPage > previousPage else { return }
@@ -593,7 +605,7 @@ final class AppState {
         defer { isLoadingNotifications = false }
         do {
             notifications = try await api.fetchNotifications(token: session.token)
-            OfflineDataStore.save(notifications, key: "notifications", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(notifications, key: "notifications", accountID: session.user.id)
         } catch {
             guard !Self.isExpectedCancellation(error) else { return }
             if Self.isUnauthorized(error) { report(error) }
@@ -605,7 +617,7 @@ final class AppState {
         guard let session else { return }
         if let index = notifications.firstIndex(where: { $0.id == notification.id }) {
             notifications[index].isRead = true
-            OfflineDataStore.save(notifications, key: "notifications", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(notifications, key: "notifications", accountID: session.user.id)
         }
         do {
             try await api.markNotificationRead(id: notification.id, token: session.token)
@@ -617,7 +629,7 @@ final class AppState {
     func markNotificationsRead() async {
         guard let session else { return }
         for index in notifications.indices { notifications[index].isRead = true }
-        OfflineDataStore.save(notifications, key: "notifications", accountID: session.user.id)
+        OfflineDataStore.saveDeferred(notifications, key: "notifications", accountID: session.user.id)
         do {
             try await api.markAllNotificationsRead(token: session.token)
         } catch {
@@ -664,7 +676,7 @@ final class AppState {
             let complete = clientTasksLoadedPage >= clientTasksPages
             if complete { clientTasks.removeAll { !clientTaskFreshIDs.contains($0.id) } }
             let savedAt = complete ? Date.now : (clientTasksUpdatedAt ?? .now)
-            clientTasksUpdatedAt = OfflineDataStore.save(clientTasks, key: "client-tasks", accountID: session.user.id, date: savedAt) ?? savedAt
+            clientTasksUpdatedAt = OfflineDataStore.saveDeferred(clientTasks, key: "client-tasks", accountID: session.user.id, date: savedAt)
             clientTasksShowingSavedCopy = !complete
             prefetchTaskImages()
         } catch {
@@ -692,7 +704,7 @@ final class AppState {
             let complete = clientTasksLoadedPage >= clientTasksPages
             if complete { clientTasks.removeAll { !clientTaskFreshIDs.contains($0.id) } }
             let savedAt = complete ? Date.now : (clientTasksUpdatedAt ?? .now)
-            clientTasksUpdatedAt = OfflineDataStore.save(clientTasks, key: "client-tasks", accountID: session.user.id, date: savedAt) ?? savedAt
+            clientTasksUpdatedAt = OfflineDataStore.saveDeferred(clientTasks, key: "client-tasks", accountID: session.user.id, date: savedAt)
             clientTasksShowingSavedCopy = !complete
             prefetchTaskImages()
         } catch {
@@ -757,9 +769,9 @@ final class AppState {
             let complete = professionalLeadsLoadedPage >= professionalLeadsPages
             if complete { professionalLeads.removeAll { !professionalLeadFreshIDs.contains($0.id) } }
             let savedAt = complete ? Date.now : (professionalLeadsUpdatedAt ?? .now)
-            professionalLeadsUpdatedAt = OfflineDataStore.save(
+            professionalLeadsUpdatedAt = OfflineDataStore.saveDeferred(
                 professionalLeads, key: "professional-leads", accountID: session.user.id, date: savedAt
-            ) ?? savedAt
+            )
             professionalLeadsShowingSavedCopy = !complete
             prefetchTaskImages()
             professionalLoadFailed = false
@@ -794,9 +806,9 @@ final class AppState {
             let complete = professionalLeadsLoadedPage >= professionalLeadsPages
             if complete { professionalLeads.removeAll { !professionalLeadFreshIDs.contains($0.id) } }
             let savedAt = complete ? Date.now : (professionalLeadsUpdatedAt ?? .now)
-            professionalLeadsUpdatedAt = OfflineDataStore.save(
+            professionalLeadsUpdatedAt = OfflineDataStore.saveDeferred(
                 professionalLeads, key: "professional-leads", accountID: session.user.id, date: savedAt
-            ) ?? savedAt
+            )
             professionalLeadsShowingSavedCopy = !complete
             prefetchTaskImages()
         } catch {
@@ -818,7 +830,7 @@ final class AppState {
         defer { isLoadingProfessionalProposals = false }
         do {
             professionalProposals = try await api.fetchProfessionalProposals(token: session.token)
-            professionalProposalsUpdatedAt = OfflineDataStore.save(professionalProposals, key: "professional-proposals", accountID: session.user.id) ?? .now
+            professionalProposalsUpdatedAt = OfflineDataStore.saveDeferred(professionalProposals, key: "professional-proposals", accountID: session.user.id)
             professionalProposalsShowingSavedCopy = false
             professionalLoadFailed = false
         } catch {
@@ -839,9 +851,9 @@ final class AppState {
             professionalConversations = try await api.fetchProfessionalConversations(token: session.token)
             let currentIDs = Set(professionalConversations.map(\.id))
             for removedID in previousIDs.subtracting(currentIDs) {
-                OfflineDataStore.remove(key: "messages-\(removedID)", accountID: session.user.id)
+                OfflineDataStore.removeDeferred(key: "messages-\(removedID)", accountID: session.user.id)
             }
-            professionalConversationsUpdatedAt = OfflineDataStore.save(professionalConversations, key: "professional-conversations", accountID: session.user.id) ?? .now
+            professionalConversationsUpdatedAt = OfflineDataStore.saveDeferred(professionalConversations, key: "professional-conversations", accountID: session.user.id)
             professionalConversationsShowingSavedCopy = false
             professionalLoadFailed = false
         } catch {
@@ -856,13 +868,13 @@ final class AppState {
         guard let session else { return ([], nil) }
         do {
             let page = try await api.fetchProfessionalMessages(conversationID: conversationID, token: session.token, before: before)
-            let saved = OfflineDataStore.load(
+            let saved = await OfflineDataStore.loadAsync(
                 [ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id
             )?.value ?? []
             let freshIDs = Set(page.items.map(\.id))
             let merged = (saved.filter { !freshIDs.contains($0.id) } + page.items)
                 .sorted { $0.createdAt < $1.createdAt }
-            OfflineDataStore.save(merged, key: "messages-\(conversationID)", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(merged, key: "messages-\(conversationID)", accountID: session.user.id)
             if before == nil { try? await api.markConversationRead(id: conversationID, token: session.token) }
             if let index = professionalConversations.firstIndex(where: { $0.id == conversationID }) {
                 let value = professionalConversations[index]
@@ -876,12 +888,12 @@ final class AppState {
                     lastMessageAt: value.lastMessageAt,
                     unreadCount: 0
                 )
-                OfflineDataStore.save(professionalConversations, key: "professional-conversations", accountID: session.user.id)
+                OfflineDataStore.saveDeferred(professionalConversations, key: "professional-conversations", accountID: session.user.id)
             }
             return page
         } catch {
             if Self.isUnauthorized(error) { report(error); return ([], nil) }
-            let cached = OfflineDataStore.load([ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id)?.value ?? []
+            let cached = await OfflineDataStore.loadAsync([ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id)?.value ?? []
             return (Array(cached.suffix(50)), nil)
         }
     }
@@ -892,12 +904,12 @@ final class AppState {
         guard !value.isEmpty else { return nil }
         do {
             let message = try await api.sendMessage(conversationID: conversationID, text: value, token: session.token)
-            var savedMessages = OfflineDataStore.load(
+            var savedMessages = await OfflineDataStore.loadAsync(
                 [ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id
             )?.value ?? []
             if !savedMessages.contains(where: { $0.id == message.id }) {
                 savedMessages.append(message)
-                OfflineDataStore.save(savedMessages, key: "messages-\(conversationID)", accountID: session.user.id)
+                OfflineDataStore.saveDeferred(savedMessages, key: "messages-\(conversationID)", accountID: session.user.id)
             }
             if let index = professionalConversations.firstIndex(where: { $0.id == conversationID }) {
                 let conversation = professionalConversations[index]
@@ -911,7 +923,7 @@ final class AppState {
                     lastMessageAt: message.createdAt,
                     unreadCount: 0
                 )
-                OfflineDataStore.save(professionalConversations, key: "professional-conversations", accountID: session.user.id)
+                OfflineDataStore.saveDeferred(professionalConversations, key: "professional-conversations", accountID: session.user.id)
             }
             return message
         } catch {
@@ -943,7 +955,7 @@ final class AppState {
         do {
             professionalStats = try await api.fetchProfessionalStats(token: session.token)
             if let professionalStats {
-                professionalStatsUpdatedAt = OfflineDataStore.save(professionalStats, key: "professional-stats", accountID: session.user.id) ?? .now
+                professionalStatsUpdatedAt = OfflineDataStore.saveDeferred(professionalStats, key: "professional-stats", accountID: session.user.id)
             }
             professionalStatsShowingSavedCopy = false
             professionalLoadFailed = false
@@ -1018,11 +1030,11 @@ final class AppState {
                 token: session.token,
                 actingSpecialistID: await actingSpecialistID(for: session)
             )
-            OfflineDataStore.save(task, key: "task-detail-\(id)", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(task, key: "task-detail-\(id)", accountID: session.user.id)
             return task
         } catch {
             if Self.isUnauthorized(error) { report(error); return nil }
-            return OfflineDataStore.load(RepairTask.self, key: "task-detail-\(id)", accountID: session.user.id)?.value
+            return await OfflineDataStore.loadAsync(RepairTask.self, key: "task-detail-\(id)", accountID: session.user.id)?.value
                 ?? clientTasks.first { $0.id == id }
         }
     }
@@ -1047,17 +1059,17 @@ final class AppState {
                 token: session.token
             )
             professionalLeads.removeAll { $0.id == taskID }
-            OfflineDataStore.save(professionalLeads, key: "professional-leads", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(professionalLeads, key: "professional-leads", accountID: session.user.id)
             if let proposals = try? await api.fetchProfessionalProposals(token: session.token) {
                 professionalProposals = proposals
-                OfflineDataStore.save(proposals, key: "professional-proposals", accountID: session.user.id)
+                OfflineDataStore.saveDeferred(proposals, key: "professional-proposals", accountID: session.user.id)
             }
             if let credits = try? await api.fetchCreditAccount(token: session.token) {
                 creditAccount = credits
             }
             if let conversations = try? await api.fetchProfessionalConversations(token: session.token) {
                 professionalConversations = conversations
-                OfflineDataStore.save(conversations, key: "professional-conversations", accountID: session.user.id)
+                OfflineDataStore.saveDeferred(conversations, key: "professional-conversations", accountID: session.user.id)
             }
             return true
         } catch let APIError.server(_, message, code) {
@@ -1077,10 +1089,10 @@ final class AppState {
         do {
             try await api.updateProposal(id: id, status: status, token: session.token)
             professionalProposals = try await api.fetchProfessionalProposals(token: session.token)
-            OfflineDataStore.save(professionalProposals, key: "professional-proposals", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(professionalProposals, key: "professional-proposals", accountID: session.user.id)
             if status == "accepted" {
                 professionalConversations = (try? await api.fetchProfessionalConversations(token: session.token)) ?? professionalConversations
-                OfflineDataStore.save(professionalConversations, key: "professional-conversations", accountID: session.user.id)
+                OfflineDataStore.saveDeferred(professionalConversations, key: "professional-conversations", accountID: session.user.id)
             }
             return true
         } catch let APIError.server(_, message, code) {
@@ -1148,7 +1160,7 @@ final class AppState {
                 token: token
             )
             professionalProposals = try await api.fetchProfessionalProposals(token: session.token)
-            OfflineDataStore.save(professionalProposals, key: "professional-proposals", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(professionalProposals, key: "professional-proposals", accountID: session.user.id)
             return true
         } catch let APIError.server(_, message, code) {
             errorMessage = professionalLifecycleErrorMessage(code: code, fallback: message)
@@ -1182,7 +1194,7 @@ final class AppState {
             if let index = clientTasks.firstIndex(where: { $0.id == id }) {
                 clientTasks[index] = updated
             }
-            OfflineDataStore.save(updated, key: "task-detail-\(id)", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(updated, key: "task-detail-\(id)", accountID: session.user.id)
             persistClientTasks(for: session.user.id)
             return updated
         } catch {
@@ -1232,10 +1244,10 @@ final class AppState {
             if let index = clientTasks.firstIndex(where: { $0.id == id }) {
                 clientTasks[index] = updated
             }
-            OfflineDataStore.save(updated, key: "task-detail-\(id)", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(updated, key: "task-detail-\(id)", accountID: session.user.id)
             persistClientTasks(for: session.user.id)
             let refreshed = try await api.fetchTask(id: id, token: session.token)
-            OfflineDataStore.save(refreshed, key: "task-detail-\(id)", accountID: session.user.id)
+            OfflineDataStore.saveDeferred(refreshed, key: "task-detail-\(id)", accountID: session.user.id)
             return refreshed
         } catch {
             report(error)
@@ -1464,9 +1476,12 @@ final class AppState {
 
     private func clearLocalSession() {
         if let userID = session?.user.id {
-            OfflineDataStore.removeAccount(userID)
-            let privateImages = taskImageURLs
-            Task { await OfflineImageStore.shared.remove(privateImages) }
+            OfflineDataStore.removeAccountDeferred(userID)
+            let leads = professionalLeads
+            let tasks = clientTasks
+            Task.detached(priority: .utility) {
+                await OfflineImageStore.shared.remove(OfflineImageTargets.tasks(leads, tasks))
+            }
         }
         session = nil
         workspaceMode = .client
@@ -1524,13 +1539,35 @@ final class AppState {
     }
 
     func becomeProfessional(categories: [String], city: String, bio: String) async -> Bool {
-        guard var session else { return false }
+        guard var session, session.user.role == .client else { return false }
         return await perform {
-            try await api.onboardProfessional(categories: categories, city: city, bio: bio, token: session.token)
-            session.user.role = .specialist
+            let updatedUser = try await api.onboardProfessional(categories: categories, city: city, bio: bio, token: session.token)
+            guard updatedUser.role == .specialist else { throw APIError.invalidResponse }
+            session.user = updatedUser
             try sessionStore.saveSession(session)
             self.session = session
             workspaceMode = .professional
+        }
+    }
+
+    func refreshSessionRole() async {
+        guard var current = session else { return }
+        do {
+            let user = try await api.fetchCurrentUser(token: current.token)
+            guard session?.token == current.token else { return }
+            current.user = user
+            try sessionStore.saveSession(current)
+            session = current
+            if user.role != .specialist {
+                workspaceMode = .client
+                pendingBillingPage = nil
+            }
+        } catch {
+            if Self.isUnauthorized(error), session?.token == current.token {
+                clearLocalSession()
+            }
+            // Saved access remains usable on connectivity failures. The
+            // server checks the role on every protected endpoint.
         }
     }
 
@@ -1658,5 +1695,43 @@ final class AppState {
             return
         }
         errorMessage = error.localizedDescription
+    }
+}
+
+/// URL extraction is deliberately outside AppState's main actor. A large
+/// offline article library can contain thousands of inline image references.
+private enum OfflineImageTargets {
+    static func specialists(_ items: [Specialist]) -> [URL] {
+        items.compactMap(\.displayAvatarURL) + items.flatMap { specialist in
+            specialist.portfolioProjects.compactMap(\.displayCoverURL)
+                + specialist.portfolioURLs
+                + specialist.portfolioProjects.flatMap(\.photoURLs)
+        }
+    }
+
+    static func articles(_ items: [BlogArticle]) -> [URL] {
+        items.compactMap(\.coverURL) + items.flatMap { article in
+            [article.content.he, article.content.ru, article.content.en]
+                .flatMap { ArticleContent.blocks(from: $0, baseURL: AppConfiguration.webBaseURL) }
+                .compactMap { block -> URL? in
+                    if case let .image(url) = block { return url }
+                    return nil
+                }
+        }
+    }
+
+    static func tasks(_ leads: [ProfessionalLead], _ tasks: [RepairTask]) -> [URL] {
+        var urls = leads.flatMap(\.attachmentURLs)
+        for task in tasks {
+            urls.append(contentsOf: task.attachmentURLs)
+            urls.append(contentsOf: task.proposals.compactMap(\.specialistAvatarURL))
+            if let avatar = task.acceptedSpecialist?.avatarURL { urls.append(avatar) }
+            if let completion = task.completion {
+                urls.append(contentsOf: completion.specialistPhotoURLs)
+                urls.append(contentsOf: completion.clientPhotoURLs)
+                urls.append(contentsOf: completion.expenseReceiptURLs)
+            }
+        }
+        return urls
     }
 }

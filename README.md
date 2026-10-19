@@ -8,7 +8,7 @@
 
 [Website](https://kablay.co.il/en) · [Complete screenshot gallery](docs/gallery.md) · [Support](https://kablay.co.il/en/app-support) · [Privacy policy](https://kablay.co.il/en/privacy)
 
-This is the **public source repository for the iOS application**, version **1.0.0, build 43**. The marketplace server, deployment configuration, credentials, signing material, and App Review account details are kept separately. The source is available for inspection under the [KABLAY Public Source License](LICENSE); public visibility does not make it open source or grant commercial reuse.
+This is the **public source repository for the iOS application**, version **1.0.0, build 44**. The marketplace server, deployment configuration, credentials, signing material, and App Review account details are kept separately. The source is available for inspection under the [KABLAY Public Source License](LICENSE); public visibility does not make it open source or grant commercial reuse.
 
 ## How the app works
 
@@ -16,6 +16,8 @@ This is the **public source repository for the iOS application**, version **1.0.
 2. **Create a request.** Add details, photos, timing, budget, city and a map pin. The request stays visible in *My requests* as it progresses.
 3. **Choose a professional.** Compare proposals, price, profile, verification labels, portfolio and reviews. Message the professional and record the agreed work.
 4. **Finish with a record.** Confirm the result and amount paid, then leave a review tied to completed work.
+
+Clients can join as professionals in the app: verify a phone number, choose trades and a service city, then complete photos and a portfolio later. The Pro workspace opens only for specialist accounts.
 
 The **Pro workspace** has four areas: *Jobs* for relevant requests, *My work* for accepted and completed jobs, *Chats* for client conversations, and *Profile* for availability, credits, statistics and the public portfolio. A first response to a listed task uses 5 credits from a pack for every professional. The optional monthly Premium subscription keeps phone and WhatsApp available through the public profile and lets professionals answer enquiries through that profile without spending credits. Premium does not waive the task-response cost. Credit packs and Premium are purchased with StoreKit; the server verifies Apple transactions before changing a balance or entitlement. The purchase screen shows Apple's local price and renewal terms, and provides a restore option.
 
@@ -42,7 +44,7 @@ The App Store product-page [header and search images](docs/app-store/creative-as
 | Client | Catalog, Smart Search, request wizard, city and map selection, proposals, specialist profiles, chat, completion and verified reviews |
 | Professional | Job feed, offers, work tracking, chat, profile and portfolio, credits, Premium, monthly work-journal exports |
 | Platform | SwiftUI, Hebrew RTL, Russian and English, Apple Maps, camera and photo library, push notifications and deep links, Face ID and app PIN |
-| Offline | Bundled categories and saved articles, specialists, recent requests, jobs, conversations and images with last-updated labels; writes wait for a connection |
+| Offline | Bundled categories and saved articles, specialists, recent requests, jobs, conversations and images with last-updated labels; local snapshots update in the background |
 
 Read the [offline freshness and retention policy](docs/offline-behavior.md) for exact refresh intervals and what remains available without a network.
 

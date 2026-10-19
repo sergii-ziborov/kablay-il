@@ -551,7 +551,7 @@ final class KablayILTests: XCTestCase {
         XCTAssertEqual(profile.specialist.portfolioProjects.first?.photoURLs.count, 2)
         XCTAssertEqual(profile.creditsBalance, 37)
 
-        let leads = try await api.fetchProfessionalLeads(token: "real-token")
+        let leads = try await api.fetchProfessionalLeads(token: "real-token").items
         XCTAssertEqual(leads.first?.id, "task-live-1")
         XCTAssertEqual(leads.first?.budget, "₪300–500")
         XCTAssertTrue(leads.first?.urgent == true)
@@ -732,7 +732,7 @@ final class KablayILTests: XCTestCase {
             session: session
         )
 
-        let articles = try await api.fetchBlogArticles()
+        let articles = try await api.fetchBlogArticles().items
         XCTAssertEqual(articles.count, 1)
         XCTAssertEqual(articles.first?.categoryID, "plumbing")
         XCTAssertEqual(articles.first?.coverURL?.pathExtension, "webp")
@@ -830,7 +830,7 @@ final class KablayILTests: XCTestCase {
         let leads = try await api.fetchProfessionalLeads(
             token: "admin-token",
             actingSpecialistID: "admin-spec-1"
-        )
+        ).items
         XCTAssertTrue(leads.isEmpty)
     }
 
@@ -1123,6 +1123,23 @@ final class KablayILTests: XCTestCase {
         XCTAssertFalse(state.handleUniversalLink(URL(string: "https://example.com/en/task/task-42")!))
     }
 
+    @MainActor
+    func testProfessionalWorkspaceAndBillingRequireSpecialistRole() {
+        for role in [UserRole.client, .admin, .specialist] {
+            let user = SessionUser(id: "role-\(role.rawValue)", name: "Test", phone: nil, role: role)
+            let store = TestSessionStore(session: AuthSession(token: "role-\(role.rawValue)", user: user))
+            let state = AppState(sessionStore: store)
+            XCTAssertEqual(state.isProfessional, role == .specialist)
+            XCTAssertEqual(state.workspaceMode, role == .specialist ? .professional : .client)
+            XCTAssertEqual(
+                state.handleUniversalLink(URL(string: "kablay://billing/premium")!),
+                role == .specialist
+            )
+            XCTAssertEqual(state.pendingBillingPage == .premium, role == .specialist)
+            state.signOut()
+        }
+    }
+
     func testBundledMobileContractContainsEveryCriticalSchema() {
         XCTAssertEqual(MobileContract.version, "1.0.0")
         XCTAssertEqual(
@@ -1172,6 +1189,8 @@ private func requestBodyData(_ request: URLRequest) -> Data? {
 
 private final class TestSessionStore: SessionStoring {
     private var session: AuthSession?
+
+    init(session: AuthSession? = nil) { self.session = session }
 
     func loadSession() -> AuthSession? { session }
     func saveSession(_ session: AuthSession) throws { self.session = session }

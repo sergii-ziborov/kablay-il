@@ -4,6 +4,8 @@ import UIKit
 struct AccountView: View {
     @Environment(AppState.self) private var appState
     @State private var showLogin = false
+    @State private var showJoinAfterLogin = false
+    @State private var showJoinOnboarding = false
     @State private var showDeleteAccountFlow = false
     @State private var exportedData: URL?
 
@@ -68,7 +70,7 @@ struct AccountView: View {
                         en: "One file with what the account holds: details, requests, proposals, messages you wrote, credits, and purchases. Text other people wrote is not included, because it is their personal data."
                     ))
                 }
-                if !appState.isProfessional {
+                if user.role == .client {
                     Section {
                         NavigationLink { ProfessionalOnboardingView() } label: {
                             Label(appState.locale.text(he: "הצטרפות כבעל מקצוע", ru: "Стать мастером", en: "Join as a professional"), systemImage: "wrench.and.screwdriver.fill")
@@ -86,6 +88,23 @@ struct AccountView: View {
                             .foregroundStyle(.secondary)
                         Button(appState.locale.text(he: "כניסה לפי טלפון", ru: "Войти по телефону", en: "Sign in by phone")) { showLogin = true }
                             .buttonStyle(BrandPrimaryButtonStyle())
+                        Button {
+                            showJoinAfterLogin = true
+                            showLogin = true
+                        } label: {
+                            Label(
+                                appState.locale.text(he: "הצטרפות כבעל מקצוע", ru: "Стать мастером", en: "Join as a professional"),
+                                systemImage: "wrench.and.screwdriver.fill"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        Text(appState.locale.text(
+                            he: "אמתו את מספר הטלפון, בחרו תחום ועיר — והפרופיל שלכם מוכן.",
+                            ru: "Подтвердите номер, выберите направления и город — профиль готов.",
+                            en: "Verify your phone, choose your trades and city, and your profile is ready."
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 }
@@ -127,16 +146,24 @@ struct AccountView: View {
         }
         .navigationTitle(appState.locale.text(he: "חשבון", ru: "Кабинет", en: "Account"))
         .toolbar { WorkspaceNavigationToolbar() }
-        .task { await appState.loadProfessionalProfile() }
-        .sheet(isPresented: $showLogin) { PhoneLoginView() }
+        .task { if appState.isProfessional { await appState.loadProfessionalProfile() } }
+        .navigationDestination(isPresented: $showJoinOnboarding) { ProfessionalOnboardingView() }
+        .sheet(isPresented: $showLogin, onDismiss: {
+            if showJoinAfterLogin, appState.session?.user.role == .client {
+                showJoinOnboarding = true
+            }
+            showJoinAfterLogin = false
+        }) { PhoneLoginView() }
         .sheet(isPresented: $showDeleteAccountFlow) { AccountDeletionView() }
         .sheet(item: $exportedData) { file in ExportedDataShareView(url: file) }
     }
 
     private func roleTitle(_ role: UserRole) -> String {
-        role == .client
-            ? appState.locale.text(he: "לקוח", ru: "Клиент", en: "Client")
-            : appState.locale.text(he: "בעל מקצוע", ru: "Специалист", en: "Professional")
+        switch role {
+        case .client: appState.locale.text(he: "לקוח", ru: "Клиент", en: "Client")
+        case .specialist: appState.locale.text(he: "בעל מקצוע", ru: "Специалист", en: "Professional")
+        case .admin: appState.locale.text(he: "מנהל", ru: "Администратор", en: "Administrator")
+        }
     }
 }
 
@@ -411,124 +438,180 @@ private struct ExportedDataShareView: UIViewControllerRepresentable {
 
 struct ProfessionalOnboardingView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
     @State private var categories: Set<String> = []
+    @State private var categorySearch = ""
     @State private var city = ""
     @State private var bio = ""
+    @State private var step = 0
     @State private var didLoad = false
     @State private var didSave = false
 
     private var isEditingExistingProfile: Bool { appState.isProfessional }
+    private var filteredCategories: [ServiceCategory] {
+        let query = categorySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return appState.serviceCatalog }
+        return appState.serviceCatalog.filter {
+            $0.title.value(for: appState.locale).localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
         Form {
             Section {
-                Text(appState.locale.text(he: "פרופיל בעל מקצוע", ru: "Анкета специалиста", en: "Professional profile")).font(.title2).fontWeight(.bold)
-                Text(
-                    isEditingExistingProfile
-                        ? appState.locale.text(
-                            he: "התחומים, עיר השירות והתיאור שמוצגים בפרופיל הציבורי.",
-                            ru: "Направления, город работы и описание, которые видны в публичном профиле.",
-                            en: "The trades, service city, and description shown on your public profile."
-                        )
-                        : appState.locale.text(
-                            he: "בחרו תחומים ועיר שירות. ניתן להרחיב את הפרופיל אחר כך.",
-                            ru: "Выберите направления и город работы. Профиль можно дополнить позже.",
-                            en: "Choose trades and a service city. You can complete the profile later."
-                        )
-                )
-                .foregroundStyle(.secondary)
-            }
-            // Name and phone live in the account, not in the questionnaire, so
-            // the two screens point at each other instead of holding separate
-            // copies of the same person.
-            Section {
-                NavigationLink { ProfileSettingsView() } label: {
-                    HStack {
-                        Label(appState.locale.text(he: "שם וטלפון", ru: "Имя и телефон", en: "Name and phone"), systemImage: "person.text.rectangle")
-                        Spacer()
-                        Text(appState.session?.user.name ?? "").foregroundStyle(.secondary)
-                    }
-                }
-            } footer: {
-                Text(appState.locale.text(
-                    he: "השם בפרופיל הציבורי הוא השם בחשבון.",
-                    ru: "Имя в публичном профиле — это имя аккаунта.",
-                    en: "The name on your public profile is your account name."
-                ))
-            }
-            Section(appState.locale.text(he: "תחומים", ru: "Категории", en: "Trades")) {
-                Text(appState.locale.text(
-                    he: "בחרו עד \(SpecialistProfileLimits.maxCategories) תחומים · \(categories.count)/\(SpecialistProfileLimits.maxCategories)",
-                    ru: "Выберите до \(SpecialistProfileLimits.maxCategories) направлений · \(categories.count)/\(SpecialistProfileLimits.maxCategories)",
-                    en: "Select up to \(SpecialistProfileLimits.maxCategories) trades · \(categories.count)/\(SpecialistProfileLimits.maxCategories)"
-                ))
-                .font(.subheadline).foregroundStyle(.secondary)
-                ForEach(appState.serviceCatalog) { category in
-                    Button {
-                        if categories.contains(category.id) {
-                            categories.remove(category.id)
-                        } else if categories.count < SpecialistProfileLimits.maxCategories {
-                            categories.insert(category.id)
-                        }
-                    } label: {
-                        HStack {
-                            Label(category.title.value(for: appState.locale), systemImage: category.systemImage).foregroundStyle(.primary)
-                            Spacer()
-                            if categories.contains(category.id) { Image(systemName: "checkmark.circle.fill").foregroundStyle(Brand.red) }
+                HStack(spacing: 10) {
+                    Image(systemName: isEditingExistingProfile ? "person.crop.circle.badge.checkmark" : "wrench.and.screwdriver.fill")
+                        .font(.title2)
+                        .foregroundStyle(Brand.red)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(isEditingExistingProfile
+                            ? appState.locale.text(he: "עריכת הפרופיל", ru: "Редактировать профиль", en: "Edit profile")
+                            : appState.locale.text(he: "פרופיל בעל מקצוע", ru: "Профиль мастера", en: "Professional profile"))
+                            .font(.title2.bold())
+                        if !isEditingExistingProfile {
+                            Text(appState.locale.text(
+                                he: "שלב \(step + 1) מתוך 2 · כשתי דקות",
+                                ru: "Шаг \(step + 1) из 2 · около двух минут",
+                                en: "Step \(step + 1) of 2 · about two minutes"
+                            ))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         }
                     }
-                    .disabled(!categories.contains(category.id) && categories.count >= SpecialistProfileLimits.maxCategories)
+                }
+                if !isEditingExistingProfile {
+                    ProgressView(value: Double(step + 1), total: 2)
+                        .tint(Brand.red)
                 }
             }
-            Section(appState.locale.text(he: "אזור ופרופיל", ru: "Город и описание", en: "Area and profile")) {
-                CitySelectionRow(
-                    value: $city,
-                    title: appState.locale.text(he: "עיר", ru: "Город", en: "City")
-                )
-                TextField(appState.locale.text(he: "עליך ועל הניסיון שלך", ru: "О себе и опыте", en: "About you and your experience"), text: $bio, axis: .vertical).lineLimit(3...7)
-            }
-            Section {
-                Button {
-                    Task {
-                        didSave = await appState.saveProfessionalQuestionnaire(
-                            categories: Array(categories),
-                            city: city,
-                            bio: bio
-                        )
+
+            if step == 0 || isEditingExistingProfile {
+                Section {
+                    Text(appState.locale.text(
+                        he: "בחרו את סוגי העבודות שאתם באמת מבצעים. אפשר לשנות אחר כך.",
+                        ru: "Выберите работы, которые действительно выполняете. Позже список можно изменить.",
+                        en: "Choose the work you actually do. You can change this later."
+                    ))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    TextField(appState.locale.text(he: "חיפוש תחום", ru: "Найти направление", en: "Find a trade"), text: $categorySearch)
+                        .textInputAutocapitalization(.never)
+                    ForEach(filteredCategories) { category in
+                        Button {
+                            if categories.contains(category.id) {
+                                categories.remove(category.id)
+                            } else if categories.count < SpecialistProfileLimits.maxCategories {
+                                categories.insert(category.id)
+                            }
+                        } label: {
+                            HStack {
+                                Label(category.title.value(for: appState.locale), systemImage: category.systemImage)
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                if categories.contains(category.id) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Brand.red)
+                                }
+                            }
+                        }
+                        .disabled(!categories.contains(category.id) && categories.count >= SpecialistProfileLimits.maxCategories)
                     }
-                } label: {
-                    if appState.isWorking {
-                        ProgressView().frame(maxWidth: .infinity)
-                    } else {
-                        Text(
-                            isEditingExistingProfile
-                                ? appState.locale.text(he: "שמירה", ru: "Сохранить", en: "Save")
-                                : appState.locale.text(he: "יצירת פרופיל", ru: "Создать профиль", en: "Create profile")
-                        )
+                } header: {
+                    Text(appState.locale.text(
+                        he: "תחומים · \(categories.count)/\(SpecialistProfileLimits.maxCategories)",
+                        ru: "Направления · \(categories.count)/\(SpecialistProfileLimits.maxCategories)",
+                        en: "Trades · \(categories.count)/\(SpecialistProfileLimits.maxCategories)"
+                    ))
+                }
+            }
+
+            if step == 1 || isEditingExistingProfile {
+                Section(appState.locale.text(he: "אזור העבודה", ru: "Город работы", en: "Service city")) {
+                    CitySelectionRow(value: $city, title: appState.locale.text(he: "עיר", ru: "Город", en: "City"))
+                    Text(appState.locale.text(
+                        he: "בחרו עיר ראשית. תוכלו להרחיב אזור שירות בפרופיל אחר כך.",
+                        ru: "Выберите основной город. Зону работы можно расширить в профиле позже.",
+                        en: "Choose your main city. You can expand your service area later."
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                Section(appState.locale.text(he: "עליכם", ru: "О вас", en: "About you")) {
+                    TextField(
+                        appState.locale.text(he: "ניסיון, סוגי עבודות והתמחות", ru: "Опыт, виды работ и специализация", en: "Experience, work and specialties"),
+                        text: $bio, axis: .vertical
+                    )
+                    .lineLimit(3...7)
+                    Text(appState.locale.text(
+                        he: "אפשר להשלים תיאור, תמונות ותיק עבודות גם אחרי ההרשמה.",
+                        ru: "Описание, фото и портфолио можно дополнить после регистрации.",
+                        en: "You can add a description, photos and a portfolio after joining."
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    NavigationLink { ProfileSettingsView() } label: {
+                        Label(appState.locale.text(he: "בדיקת שם וטלפון", ru: "Проверить имя и телефон", en: "Check name and phone"), systemImage: "person.text.rectangle")
                     }
                 }
-                .buttonStyle(BrandPrimaryButtonStyle())
-                .disabled(categories.isEmpty || city.isEmpty || appState.isWorking)
-                if didSave {
-                    Label(appState.locale.text(he: "נשמר", ru: "Сохранено", en: "Saved"), systemImage: "checkmark.circle.fill")
+            }
+            if didSave {
+                Section {
+                    Label(appState.locale.text(he: "הפרופיל נשמר", ru: "Профиль сохранён", en: "Profile saved"), systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                 }
             }
         }
-        .navigationTitle(
-            isEditingExistingProfile
-                ? appState.locale.text(he: "שאלון", ru: "Анкета", en: "Questionnaire")
-                : appState.locale.text(he: "הצטרפות כבעל מקצוע", ru: "Стать мастером", en: "Join as a professional")
-        )
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                Divider()
+                HStack(spacing: 12) {
+                    if step == 1 && !isEditingExistingProfile {
+                        Button(appState.locale.text(he: "חזרה", ru: "Назад", en: "Back")) { step = 0 }
+                            .buttonStyle(.bordered)
+                    }
+                    Button {
+                        if step == 0 && !isEditingExistingProfile {
+                            step = 1
+                        } else {
+                            Task {
+                                let saved = await appState.saveProfessionalQuestionnaire(
+                                    categories: Array(categories), city: city, bio: bio
+                                )
+                                didSave = saved
+                                if saved { dismiss() }
+                            }
+                        }
+                    } label: {
+                        if appState.isWorking {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Text(isEditingExistingProfile
+                                ? appState.locale.text(he: "שמירה", ru: "Сохранить", en: "Save")
+                                : step == 0
+                                    ? appState.locale.text(he: "המשך", ru: "Продолжить", en: "Continue")
+                                    : appState.locale.text(he: "יצירת פרופיל", ru: "Создать профиль", en: "Create profile"))
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(BrandPrimaryButtonStyle())
+                    .disabled(categories.isEmpty || ((step == 1 || isEditingExistingProfile) && city.isEmpty) || appState.isWorking)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+            }
+            .background(.regularMaterial)
+        }
+        .navigationTitle(isEditingExistingProfile
+            ? appState.locale.text(he: "שאלון", ru: "Анкета", en: "Questionnaire")
+            : appState.locale.text(he: "הצטרפות כבעל מקצוע", ru: "Стать мастером", en: "Join as a professional"))
         .task {
             guard !didLoad else { return }
-            await appState.loadProfessionalProfile()
-            // Editing starts from what the profile actually holds; an empty
-            // form would silently offer to wipe a filled questionnaire.
-            if let specialist = appState.professionalProfile?.specialist {
-                categories = Set(specialist.categories)
-                if city.isEmpty { city = specialist.city.value(for: appState.locale) }
-                if bio.isEmpty { bio = specialist.bio.value(for: appState.locale) }
+            if isEditingExistingProfile {
+                await appState.loadProfessionalProfile()
+                if let specialist = appState.professionalProfile?.specialist {
+                    categories = Set(specialist.categories)
+                    city = specialist.city.value(for: appState.locale)
+                    bio = specialist.bio.value(for: appState.locale)
+                }
             }
             didLoad = true
         }
