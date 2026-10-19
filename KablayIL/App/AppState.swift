@@ -58,11 +58,20 @@ final class AppState {
     var notifications: [AppNotification] = []
     var notificationPreferences: NotificationPreferences = .enabled
     var blogArticles: [BlogArticle] = []
+    var blogLoadedPage = 0
+    var blogPages = 1
+    private var blogFreshIDs: Set<String> = []
     var clientTasks: [RepairTask] = []
+    var clientTasksLoadedPage = 0
+    var clientTasksPages = 1
+    private var clientTaskFreshIDs: Set<String> = []
     var professionalProfile: ProfessionalProfile?
     var professionalProfileUpdatedAt: Date?
     var professionalProfileShowingSavedCopy = false
     var professionalLeads: [ProfessionalLead] = []
+    var professionalLeadsLoadedPage = 0
+    var professionalLeadsPages = 1
+    private var professionalLeadFreshIDs: Set<String> = []
     var professionalProposals: [ProfessionalProposal] = []
     var professionalProposalsUpdatedAt: Date?
     var professionalProposalsShowingSavedCopy = false
@@ -513,17 +522,65 @@ final class AppState {
 
     func loadBlogArticles(force: Bool = false) async {
         guard !isLoadingBlog,
-              force || OfflineFreshness.needsRefresh(blogUpdatedAt, after: OfflineFreshness.articles) else { return }
+              force || blogLoadedPage == 0 || OfflineFreshness.needsRefresh(blogUpdatedAt, after: OfflineFreshness.articles) else { return }
         isLoadingBlog = true
         defer { isLoadingBlog = false }
         do {
-            blogArticles = try await api.fetchBlogArticles()
-            blogUpdatedAt = OfflineDataStore.save(blogArticles, key: "articles") ?? .now
-            blogShowingSavedCopy = false
+            let result = try await api.fetchBlogArticles()
+            let freshIDs = Set(result.items.map(\.id))
+            blogFreshIDs = freshIDs
+            blogArticles = result.items + blogArticles.filter { !freshIDs.contains($0.id) }
+            blogLoadedPage = 1
+            blogPages = result.pages
+            let complete = blogLoadedPage >= blogPages
+            if complete { blogArticles.removeAll { !blogFreshIDs.contains($0.id) } }
+            let savedAt = complete ? Date.now : (blogUpdatedAt ?? .now)
+            blogUpdatedAt = OfflineDataStore.save(blogArticles, key: "articles", date: savedAt) ?? savedAt
+            blogShowingSavedCopy = !complete
             prefetchPublicImages()
+            // Let the first screen render immediately, then warm the remaining
+            // article pages and their images for offline reading.
+            Task {
+                await Task.yield()
+                await preloadRemainingBlogArticles()
+            }
         } catch {
             guard !Self.isExpectedCancellation(error) else { return }
             blogShowingSavedCopy = !blogArticles.isEmpty
+        }
+    }
+
+    func loadMoreBlogArticles() async {
+        guard !isLoadingBlog, blogLoadedPage < blogPages else { return }
+        isLoadingBlog = true
+        defer { isLoadingBlog = false }
+        do {
+            let result = try await api.fetchBlogArticles(page: blogLoadedPage + 1)
+            let freshIDs = Set(result.items.map(\.id))
+            let previousFreshIDs = blogFreshIDs
+            blogFreshIDs.formUnion(freshIDs)
+            blogArticles = blogArticles.filter { previousFreshIDs.contains($0.id) && !freshIDs.contains($0.id) }
+                + result.items
+                + blogArticles.filter { !previousFreshIDs.contains($0.id) && !freshIDs.contains($0.id) }
+            blogLoadedPage += 1
+            blogPages = result.pages
+            let complete = blogLoadedPage >= blogPages
+            if complete { blogArticles.removeAll { !blogFreshIDs.contains($0.id) } }
+            let savedAt = complete ? Date.now : (blogUpdatedAt ?? .now)
+            blogUpdatedAt = OfflineDataStore.save(blogArticles, key: "articles", date: savedAt) ?? savedAt
+            blogShowingSavedCopy = !complete
+            prefetchPublicImages()
+        } catch {
+            blogShowingSavedCopy = !blogArticles.isEmpty
+        }
+    }
+
+    private func preloadRemainingBlogArticles() async {
+        for _ in 0..<50 {
+            guard blogLoadedPage < blogPages else { return }
+            let previousPage = blogLoadedPage
+            await loadMoreBlogArticles()
+            guard blogLoadedPage > previousPage else { return }
         }
     }
 
@@ -590,7 +647,7 @@ final class AppState {
     func loadClientTasks(force: Bool = false) async {
         guard let session,
               !isLoadingTasks,
-              force || OfflineFreshness.needsRefresh(clientTasksUpdatedAt, after: OfflineFreshness.personalTasks) else {
+              force || clientTasksLoadedPage == 0 || OfflineFreshness.needsRefresh(clientTasksUpdatedAt, after: OfflineFreshness.personalTasks) else {
             if self.session == nil { clientTasks = [] }
             return
         }
@@ -598,14 +655,47 @@ final class AppState {
         clientTasksLoadFailed = false
         defer { isLoadingTasks = false }
         do {
-            clientTasks = try await api.fetchTasks(token: session.token)
-            clientTasksUpdatedAt = OfflineDataStore.save(clientTasks, key: "client-tasks", accountID: session.user.id) ?? .now
-            clientTasksShowingSavedCopy = false
+            let result = try await api.fetchTasks(token: session.token)
+            let freshIDs = Set(result.items.map(\.id))
+            clientTaskFreshIDs = freshIDs
+            clientTasks = result.items + clientTasks.filter { !freshIDs.contains($0.id) }
+            clientTasksLoadedPage = 1
+            clientTasksPages = result.pages
+            let complete = clientTasksLoadedPage >= clientTasksPages
+            if complete { clientTasks.removeAll { !clientTaskFreshIDs.contains($0.id) } }
+            let savedAt = complete ? Date.now : (clientTasksUpdatedAt ?? .now)
+            clientTasksUpdatedAt = OfflineDataStore.save(clientTasks, key: "client-tasks", accountID: session.user.id, date: savedAt) ?? savedAt
+            clientTasksShowingSavedCopy = !complete
             prefetchTaskImages()
         } catch {
             guard !Self.isExpectedCancellation(error) else { return }
             if Self.isUnauthorized(error) { report(error); return }
             clientTasksLoadFailed = true
+            clientTasksShowingSavedCopy = !clientTasks.isEmpty
+        }
+    }
+
+    func loadMoreClientTasks() async {
+        guard let session, !isLoadingTasks, clientTasksLoadedPage < clientTasksPages else { return }
+        isLoadingTasks = true
+        defer { isLoadingTasks = false }
+        do {
+            let result = try await api.fetchTasks(token: session.token, page: clientTasksLoadedPage + 1)
+            let freshIDs = Set(result.items.map(\.id))
+            let previousFreshIDs = clientTaskFreshIDs
+            clientTaskFreshIDs.formUnion(freshIDs)
+            clientTasks = clientTasks.filter { previousFreshIDs.contains($0.id) && !freshIDs.contains($0.id) }
+                + result.items
+                + clientTasks.filter { !previousFreshIDs.contains($0.id) && !freshIDs.contains($0.id) }
+            clientTasksLoadedPage += 1
+            clientTasksPages = result.pages
+            let complete = clientTasksLoadedPage >= clientTasksPages
+            if complete { clientTasks.removeAll { !clientTaskFreshIDs.contains($0.id) } }
+            let savedAt = complete ? Date.now : (clientTasksUpdatedAt ?? .now)
+            clientTasksUpdatedAt = OfflineDataStore.save(clientTasks, key: "client-tasks", accountID: session.user.id, date: savedAt) ?? savedAt
+            clientTasksShowingSavedCopy = !complete
+            prefetchTaskImages()
+        } catch {
             clientTasksShowingSavedCopy = !clientTasks.isEmpty
         }
     }
@@ -650,19 +740,27 @@ final class AppState {
 
     func loadProfessionalLeads(force: Bool = false) async {
         guard let session, isProfessional, !isLoadingProfessionalLeads,
-              force || OfflineFreshness.needsRefresh(professionalLeadsUpdatedAt, after: OfflineFreshness.availableJobs) else { return }
+              force || professionalLeadsLoadedPage == 0 || OfflineFreshness.needsRefresh(professionalLeadsUpdatedAt, after: OfflineFreshness.availableJobs) else { return }
         isLoadingProfessionalLeads = true
         defer { isLoadingProfessionalLeads = false }
         do {
             let actingSpecialistID = await actingSpecialistID(for: session)
-            professionalLeads = try await api.fetchProfessionalLeads(
+            let result = try await api.fetchProfessionalLeads(
                 token: session.token,
                 actingSpecialistID: actingSpecialistID
             )
+            let freshIDs = Set(result.items.map(\.id))
+            professionalLeadFreshIDs = freshIDs
+            professionalLeads = result.items + professionalLeads.filter { !freshIDs.contains($0.id) }
+            professionalLeadsLoadedPage = 1
+            professionalLeadsPages = result.pages
+            let complete = professionalLeadsLoadedPage >= professionalLeadsPages
+            if complete { professionalLeads.removeAll { !professionalLeadFreshIDs.contains($0.id) } }
+            let savedAt = complete ? Date.now : (professionalLeadsUpdatedAt ?? .now)
             professionalLeadsUpdatedAt = OfflineDataStore.save(
-                professionalLeads, key: "professional-leads", accountID: session.user.id
-            ) ?? .now
-            professionalLeadsShowingSavedCopy = false
+                professionalLeads, key: "professional-leads", accountID: session.user.id, date: savedAt
+            ) ?? savedAt
+            professionalLeadsShowingSavedCopy = !complete
             prefetchTaskImages()
             professionalLoadFailed = false
             professionalLoadErrorMessage = nil
@@ -671,6 +769,38 @@ final class AppState {
             if Self.isUnauthorized(error) { report(error); return }
             professionalLeadsShowingSavedCopy = !professionalLeads.isEmpty
             recordProfessionalLoadFailure(error)
+        }
+    }
+
+    func loadMoreProfessionalLeads() async {
+        guard let session, isProfessional, !isLoadingProfessionalLeads,
+              professionalLeadsLoadedPage < professionalLeadsPages else { return }
+        isLoadingProfessionalLeads = true
+        defer { isLoadingProfessionalLeads = false }
+        do {
+            let result = try await api.fetchProfessionalLeads(
+                token: session.token,
+                actingSpecialistID: await actingSpecialistID(for: session),
+                page: professionalLeadsLoadedPage + 1
+            )
+            let freshIDs = Set(result.items.map(\.id))
+            let previousFreshIDs = professionalLeadFreshIDs
+            professionalLeadFreshIDs.formUnion(freshIDs)
+            professionalLeads = professionalLeads.filter { previousFreshIDs.contains($0.id) && !freshIDs.contains($0.id) }
+                + result.items
+                + professionalLeads.filter { !previousFreshIDs.contains($0.id) && !freshIDs.contains($0.id) }
+            professionalLeadsLoadedPage += 1
+            professionalLeadsPages = result.pages
+            let complete = professionalLeadsLoadedPage >= professionalLeadsPages
+            if complete { professionalLeads.removeAll { !professionalLeadFreshIDs.contains($0.id) } }
+            let savedAt = complete ? Date.now : (professionalLeadsUpdatedAt ?? .now)
+            professionalLeadsUpdatedAt = OfflineDataStore.save(
+                professionalLeads, key: "professional-leads", accountID: session.user.id, date: savedAt
+            ) ?? savedAt
+            professionalLeadsShowingSavedCopy = !complete
+            prefetchTaskImages()
+        } catch {
+            professionalLeadsShowingSavedCopy = !professionalLeads.isEmpty
         }
     }
 
@@ -722,12 +852,18 @@ final class AppState {
         }
     }
 
-    func loadProfessionalMessages(conversationID: String) async -> [ProfessionalMessage] {
-        guard let session else { return [] }
+    func loadProfessionalMessages(conversationID: String, before: String? = nil) async -> (items: [ProfessionalMessage], cursor: String?) {
+        guard let session else { return ([], nil) }
         do {
-            let messages = try await api.fetchProfessionalMessages(conversationID: conversationID, token: session.token)
-            OfflineDataStore.save(messages, key: "messages-\(conversationID)", accountID: session.user.id)
-            try? await api.markConversationRead(id: conversationID, token: session.token)
+            let page = try await api.fetchProfessionalMessages(conversationID: conversationID, token: session.token, before: before)
+            let saved = OfflineDataStore.load(
+                [ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id
+            )?.value ?? []
+            let freshIDs = Set(page.items.map(\.id))
+            let merged = (saved.filter { !freshIDs.contains($0.id) } + page.items)
+                .sorted { $0.createdAt < $1.createdAt }
+            OfflineDataStore.save(merged, key: "messages-\(conversationID)", accountID: session.user.id)
+            if before == nil { try? await api.markConversationRead(id: conversationID, token: session.token) }
             if let index = professionalConversations.firstIndex(where: { $0.id == conversationID }) {
                 let value = professionalConversations[index]
                 professionalConversations[index] = ProfessionalConversation(
@@ -742,10 +878,11 @@ final class AppState {
                 )
                 OfflineDataStore.save(professionalConversations, key: "professional-conversations", accountID: session.user.id)
             }
-            return messages
+            return page
         } catch {
-            if Self.isUnauthorized(error) { report(error); return [] }
-            return OfflineDataStore.load([ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id)?.value ?? []
+            if Self.isUnauthorized(error) { report(error); return ([], nil) }
+            let cached = OfflineDataStore.load([ProfessionalMessage].self, key: "messages-\(conversationID)", accountID: session.user.id)?.value ?? []
+            return (Array(cached.suffix(50)), nil)
         }
     }
 
@@ -845,8 +982,7 @@ final class AppState {
             if let refreshed = try? await api.fetchCreditAccount(token: session.token) {
                 creditAccount = refreshed
             }
-            // Premium changes what a response costs, so the profile has to be
-            // re-read rather than left on the pre-purchase state.
+            // Refresh public profile contact visibility after a Premium purchase.
             if let profile = try? await api.fetchProfessionalProfile(token: session.token) {
                 professionalProfile = profile
             }
@@ -1238,7 +1374,10 @@ final class AppState {
             }
             publishedTaskID = try await api.createTask(draft: publishableDraft, token: session.token)
             if let refreshedTasks = try? await api.fetchTasks(token: session.token) {
-                clientTasks = refreshedTasks
+                let freshIDs = Set(refreshedTasks.items.map(\.id))
+                clientTasks = refreshedTasks.items + clientTasks.filter { !freshIDs.contains($0.id) }
+                clientTasksLoadedPage = 1
+                clientTasksPages = refreshedTasks.pages
                 persistClientTasks(for: session.user.id)
             }
             taskDraft = TaskDraft()
@@ -1334,12 +1473,18 @@ final class AppState {
         notifications = []
         notificationPreferences = .enabled
         clientTasks = []
+        clientTasksLoadedPage = 0
+        clientTasksPages = 1
+        clientTaskFreshIDs = []
         clientTasksUpdatedAt = nil
         clientTasksShowingSavedCopy = false
         professionalProfile = nil
         professionalProfileUpdatedAt = nil
         professionalProfileShowingSavedCopy = false
         professionalLeads = []
+        professionalLeadsLoadedPage = 0
+        professionalLeadsPages = 1
+        professionalLeadFreshIDs = []
         professionalLeadsUpdatedAt = nil
         professionalLeadsShowingSavedCopy = false
         professionalLoadFailed = false

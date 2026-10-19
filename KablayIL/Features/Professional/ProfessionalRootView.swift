@@ -84,6 +84,7 @@ struct AvailableLeadsView: View {
     @Environment(AppState.self) private var appState
     @State private var query = ""
     @State private var filter = LeadFilter.all
+    @State private var visibleLeadCount = 20
 
     private enum LeadFilter: String, CaseIterable, Identifiable {
         case all, today, urgent
@@ -163,9 +164,19 @@ struct AvailableLeadsView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(leads) { lead in
+                        ForEach(Array(leads.prefix(visibleLeadCount))) { lead in
                             NavigationLink { ProfessionalLeadDetailView(lead: lead) } label: { LeadCard(lead: lead) }
                                 .buttonStyle(.plain)
+                        }
+                        if leads.count > visibleLeadCount || appState.professionalLeadsLoadedPage < appState.professionalLeadsPages {
+                            Button(appState.locale.text(he: "עוד הזמנות", ru: "Ещё заказы", en: "More jobs")) {
+                                Task {
+                                    await appState.loadMoreProfessionalLeads()
+                                    visibleLeadCount += 20
+                                }
+                            }
+                            .disabled(appState.isLoadingProfessionalLeads)
+                            .buttonStyle(.bordered)
                         }
                     }
                     .padding()
@@ -628,13 +639,6 @@ private struct ProposalComposerSheet: View {
                 he: "שליחת ההצעה תפתח את פרטי הלקוח ותחייב \(cost) נקודות.",
                 ru: "Отклик откроет контакт клиента и спишет \(cost) баллов.",
                 en: "Responding unlocks the client contact and uses \(cost) credits."
-            )
-        }
-        if responseState?.viewerPremium == true {
-            return appState.locale.text(
-                he: "פתיחת פרטי הלקוח כלולה ב-Premium.",
-                ru: "Открытие контакта клиента включено в Premium.",
-                en: "Client contact unlock is included with Premium."
             )
         }
         return appState.locale.text(
@@ -1562,6 +1566,9 @@ struct ConversationView: View {
     let conversation: ProfessionalConversation
     @AppStorage("chat-auto-translate") private var autoTranslate = true
     @State private var messages: [ProfessionalMessage] = []
+    @State private var olderCursor: String?
+    @State private var isLoadingOlder = false
+    @State private var scrollToBottomRequest = 0
     @State private var isLoading = true
     @State private var draft = ""
     @State private var isSending = false
@@ -1585,6 +1592,13 @@ struct ConversationView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 12) {
+                            if olderCursor != nil {
+                                Button(appState.locale.text(he: "הודעות קודמות", ru: "Ранее в чате", en: "Earlier messages")) {
+                                    Task { await loadOlderMessages() }
+                                }
+                                .disabled(isLoadingOlder)
+                                .buttonStyle(.bordered)
+                            }
                             if autoTranslate {
                                 Label(
                                     isTranslating
@@ -1606,7 +1620,7 @@ struct ConversationView: View {
                     }
                 }
             }
-            .onChange(of: messages.count) { _, _ in
+            .onChange(of: scrollToBottomRequest) { _, _ in
                 withAnimation(.snappy) { proxy.scrollTo("chat-bottom", anchor: .bottom) }
             }
         }
@@ -1756,9 +1770,27 @@ struct ConversationView: View {
     @MainActor
     private func reloadMessages(silently: Bool = false) async {
         if !silently { isLoading = true }
-        let loaded = await appState.loadProfessionalMessages(conversationID: conversation.id)
-        if loaded != messages { messages = loaded }
+        let page = await appState.loadProfessionalMessages(conversationID: conversation.id)
+        if !silently { olderCursor = page.cursor }
+        let freshIDs = Set(page.items.map(\.id))
+        let merged = (messages.filter { !freshIDs.contains($0.id) } + page.items)
+            .sorted { $0.createdAt < $1.createdAt }
+        if merged != messages { messages = merged }
         isLoading = false
+        if !silently { scrollToBottomRequest += 1 }
+        if autoTranslate { await translateIncomingMessages() }
+    }
+
+    @MainActor
+    private func loadOlderMessages() async {
+        guard let olderCursor, !isLoadingOlder else { return }
+        isLoadingOlder = true
+        defer { isLoadingOlder = false }
+        let page = await appState.loadProfessionalMessages(conversationID: conversation.id, before: olderCursor)
+        let existingIDs = Set(messages.map(\.id))
+        messages = (page.items.filter { !existingIDs.contains($0.id) } + messages)
+            .sorted { $0.createdAt < $1.createdAt }
+        self.olderCursor = page.cursor
         if autoTranslate { await translateIncomingMessages() }
     }
 
@@ -1771,6 +1803,7 @@ struct ConversationView: View {
         if let message = await appState.sendMessage(conversationID: conversation.id, text: text) {
             draft = ""
             if !messages.contains(where: { $0.id == message.id }) { messages.append(message) }
+            scrollToBottomRequest += 1
         }
         isSending = false
     }
@@ -2264,9 +2297,9 @@ struct CreditsView: View {
                 Text(appState.locale.text(he: "טעינת נקודות", ru: "Пополнить баллы", en: "Top up credits"))
             } footer: {
                 Text(appState.locale.text(
-                    he: "נקודות משמשות לפתיחת פרטי קשר. פתיחת קשר אינה מבטיחה הסכם, עבודה או תוצאה.",
-                    ru: "Баллы нужны для открытия контактов. Открытие контакта не гарантирует договор, работу или результат.",
-                    en: "Credits unlock contact details. Unlocking a contact does not guarantee a contract, a job, or a result."
+                    he: "נקודות משמשות למענה למשימות. מענה אינו מבטיח הסכם, עבודה או תוצאה.",
+                    ru: "Баллы нужны для отклика на задачи. Отклик не гарантирует договор, работу или результат.",
+                    en: "Credits are used to respond to tasks. A response does not guarantee an agreement, job, or result."
                 ))
             }
         }
@@ -2332,11 +2365,8 @@ struct PremiumView: View {
 
     private var benefits: [String] {
         [
-            appState.locale.text(he: "פתיחת פרטי לקוח במשימות ללא חיוב נקודות", ru: "Контакты по задачам без списания баллов", en: "Task contacts without spending credits"),
-            appState.locale.text(he: "פתיחת טלפון ו-WhatsApp בפרופיל ללא חיוב", ru: "Открытия телефона и WhatsApp в профиле без списания", en: "Profile phone and WhatsApp opens without charges"),
-            appState.locale.text(he: "עבודות פעילות ללא הגבלת המסלול הרגיל", ru: "Без лимита активных работ обычного доступа", en: "No standard active-job limit"),
-            appState.locale.text(he: "דירוג הלקוח לפני קבלת החלטה", ru: "Рейтинг клиента до принятия решения", en: "Client rating before you decide"),
-            appState.locale.text(he: "קדימות בקטלוג בעלי המקצוע", ru: "Приоритет в каталоге специалистов", en: "Priority in the specialist directory"),
+            appState.locale.text(he: "הטלפון ו-WhatsApp זמינים בפרופיל הציבורי", ru: "Телефон и WhatsApp доступны в публичном профиле", en: "Phone and WhatsApp are available on your public profile"),
+            appState.locale.text(he: "פניות לפרופיל אינן מחייבות נקודות", ru: "Обращения через профиль не списывают баллы", en: "Profile enquiries do not spend your credits"),
         ]
     }
 
@@ -2369,6 +2399,13 @@ struct PremiumView: View {
                         .font(.subheadline)
                         .symbolRenderingMode(.hierarchical)
                 }
+                Text(appState.locale.text(
+                    he: "תגובה ראשונה להזמנה עדיין עולה 5 נקודות ומשולמת מחבילת נקודות.",
+                    ru: "Первый отклик на заказ по-прежнему стоит 5 баллов из пакета.",
+                    en: "The first response to a job still costs 5 credits from a credit pack."
+                ))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
 
             Section {

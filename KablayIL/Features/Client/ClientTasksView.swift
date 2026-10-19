@@ -6,6 +6,7 @@ struct ClientTasksView: View {
     @Environment(AppState.self) private var appState
     @State private var showLogin = false
     @State private var filter = TaskFilter.active
+    @State private var visibleTaskCount = 25
 
     private enum TaskFilter: String, CaseIterable, Identifiable {
         case active, completed, cancelled
@@ -43,8 +44,19 @@ struct ClientTasksView: View {
                     )
                     .padding(.horizontal)
 
-                    List(visibleTasks) { task in
-                        NavigationLink { ClientTaskDetailView(task: task) } label: { ClientTaskRow(task: task) }
+                    List {
+                        ForEach(Array(visibleTasks.prefix(visibleTaskCount))) { task in
+                            NavigationLink { ClientTaskDetailView(task: task) } label: { ClientTaskRow(task: task) }
+                        }
+                        if visibleTasks.count > visibleTaskCount || appState.clientTasksLoadedPage < appState.clientTasksPages {
+                            Button(appState.locale.text(he: "עוד בקשות", ru: "Ещё заявки", en: "More requests")) {
+                                Task {
+                                    await appState.loadMoreClientTasks()
+                                    visibleTaskCount += 25
+                                }
+                            }
+                            .disabled(appState.isLoadingTasks)
+                        }
                     }
                     .listStyle(.plain)
                     .overlay {

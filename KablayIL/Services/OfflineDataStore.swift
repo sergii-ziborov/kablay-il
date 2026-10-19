@@ -3,8 +3,8 @@ import Foundation
 import SwiftUI
 
 /// Last known good server responses live in Application Support, which iOS does
-/// not evict like URLCache. A successful refresh replaces the entire snapshot:
-/// removed specialists, articles and jobs disappear only when the server says so.
+/// not evict like URLCache. A complete successful listing replaces stale rows;
+/// a partial page or failed refresh keeps the last known good content.
 struct OfflineSnapshot<Value: Codable>: Codable {
     let savedAt: Date
     let value: Value

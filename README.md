@@ -8,7 +8,7 @@
 
 [Website](https://kablay.co.il/en) · [Complete screenshot gallery](docs/gallery.md) · [Support](https://kablay.co.il/en/app-support) · [Privacy policy](https://kablay.co.il/en/privacy)
 
-This is the **public source repository for the iOS application**, version **1.0.0, build 41**. The marketplace server, deployment configuration, credentials, signing material, and App Review account details are kept separately. The source is available for inspection under the [KABLAY Public Source License](LICENSE); public visibility does not make it open source or grant commercial reuse.
+This is the **public source repository for the iOS application**, version **1.0.0, build 43**. The marketplace server, deployment configuration, credentials, signing material, and App Review account details are kept separately. The source is available for inspection under the [KABLAY Public Source License](LICENSE); public visibility does not make it open source or grant commercial reuse.
 
 ## How the app works
 
@@ -17,7 +17,7 @@ This is the **public source repository for the iOS application**, version **1.0.
 3. **Choose a professional.** Compare proposals, price, profile, verification labels, portfolio and reviews. Message the professional and record the agreed work.
 4. **Finish with a record.** Confirm the result and amount paid, then leave a review tied to completed work.
 
-The **Pro workspace** has four areas: *Jobs* for relevant requests, *My work* for accepted and completed jobs, *Chats* for client conversations, and *Profile* for availability, credits, statistics and the public portfolio. Credit packs and a monthly auto-renewing Premium subscription can be purchased with StoreKit; the server verifies Apple transactions before changing an account balance or entitlement. The purchase screen shows Apple's local price and renewal terms, and provides a restore option.
+The **Pro workspace** has four areas: *Jobs* for relevant requests, *My work* for accepted and completed jobs, *Chats* for client conversations, and *Profile* for availability, credits, statistics and the public portfolio. A first response to a listed task uses 5 credits from a pack for every professional. The optional monthly Premium subscription keeps phone and WhatsApp available through the public profile and lets professionals answer enquiries through that profile without spending credits. Premium does not waive the task-response cost. Credit packs and Premium are purchased with StoreKit; the server verifies Apple transactions before changing a balance or entitlement. The purchase screen shows Apple's local price and renewal terms, and provides a restore option.
 
 ## Screenshots
 

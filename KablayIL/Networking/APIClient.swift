@@ -290,11 +290,11 @@ actor APIClient {
         return response.phone
     }
 
-    func fetchBlogArticles() async throws -> [BlogArticle] {
+    func fetchBlogArticles(page: Int = 1) async throws -> (items: [BlogArticle], pages: Int) {
         // Rotate the CDN URL at the same cadence as the local snapshot. A
         // hard-coded query version could keep serving yesterday's article set.
         let revision = Int(Date().timeIntervalSince1970 / OfflineFreshness.articles)
-        guard let url = URL(string: "static-blog-catalog.json?v=\(revision)", relativeTo: AppConfiguration.webBaseURL)?.absoluteURL else {
+        guard let url = URL(string: "static-blog-catalog-pages/\(page).json?v=\(revision)", relativeTo: AppConfiguration.webBaseURL)?.absoluteURL else {
             throw APIError.invalidURL
         }
         var request = URLRequest(url: url)
@@ -306,7 +306,8 @@ actor APIClient {
             throw APIError.invalidResponse
         }
         do {
-            return try decoder.decode(BlogCatalogDTO.self, from: data).items.map(\.model)
+            let catalog = try decoder.decode(BlogCatalogDTO.self, from: data)
+            return (catalog.items.map(\.model), catalog.pages ?? 1)
         } catch {
             throw APIError.decoding
         }
@@ -351,9 +352,9 @@ actor APIClient {
         return response.preferences
     }
 
-    func fetchTasks(token: String) async throws -> [RepairTask] {
-        let response: TasksResponseDTO = try await request(path: "tasks", method: "GET", token: token)
-        return response.tasks.map { $0.model(baseURL: apiBaseURL) }
+    func fetchTasks(token: String, page: Int = 1) async throws -> (items: [RepairTask], pages: Int) {
+        let response: TasksResponseDTO = try await request(path: "tasks?page=\(page)&limit=25", method: "GET", token: token)
+        return (response.tasks.map { $0.model(baseURL: apiBaseURL) }, response.pages ?? 1)
     }
 
     func fetchProfessionalProfile(token: String) async throws -> ProfessionalProfile {
@@ -415,26 +416,16 @@ actor APIClient {
         return response.model(fallbackName: fallbackName, baseURL: apiBaseURL)
     }
 
-    func fetchProfessionalLeads(token: String, actingSpecialistID: String? = nil) async throws -> [ProfessionalLead] {
-        var page = 1
-        var pages = 1
-        var result: [ProfessionalLead] = []
-
-        repeat {
-            let actingQuery = actingSpecialistID.map {
-                "&acting_specialist_id=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)"
-            } ?? ""
-            let response: ProfessionalLeadsResponseDTO = try await request(
-                path: "specialists/me/available-tasks?page=\(page)\(actingQuery)",
-                method: "GET",
-                token: token
-            )
-            result.append(contentsOf: response.tasks.map { $0.model(baseURL: apiBaseURL) })
-            pages = min(max(response.pages, 1), 50)
-            page += 1
-        } while page <= pages
-
-        return result
+    func fetchProfessionalLeads(token: String, actingSpecialistID: String? = nil, page: Int = 1) async throws -> (items: [ProfessionalLead], pages: Int) {
+        let actingQuery = actingSpecialistID.map {
+            "&acting_specialist_id=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)"
+        } ?? ""
+        let response: ProfessionalLeadsResponseDTO = try await request(
+            path: "specialists/me/available-tasks?page=\(page)\(actingQuery)",
+            method: "GET",
+            token: token
+        )
+        return (response.tasks.map { $0.model(baseURL: apiBaseURL) }, response.pages)
     }
 
     func fetchProfessionalProposals(token: String) async throws -> [ProfessionalProposal] {
@@ -533,14 +524,15 @@ actor APIClient {
         return response.conversations.map { $0.model(baseURL: apiBaseURL) }
     }
 
-    func fetchProfessionalMessages(conversationID: String, token: String) async throws -> [ProfessionalMessage] {
+    func fetchProfessionalMessages(conversationID: String, token: String, before: String? = nil) async throws -> (items: [ProfessionalMessage], cursor: String?) {
         let encoded = conversationID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? conversationID
+        let beforeQuery = before.map { "?before=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
         let response: ProfessionalMessagesResponseDTO = try await request(
-            path: "conversations/\(encoded)/messages",
+            path: "conversations/\(encoded)/messages\(beforeQuery)",
             method: "GET",
             token: token
         )
-        return response.messages.map(\.model)
+        return (response.messages.map(\.model), response.cursor)
     }
 
     func sendMessage(conversationID: String, text: String, token: String) async throws -> ProfessionalMessage {
@@ -1263,6 +1255,7 @@ private struct ProfessionalConversationDTO: Decodable {
 
 private struct ProfessionalMessagesResponseDTO: Decodable {
     let messages: [ProfessionalMessageDTO]
+    let cursor: String?
 }
 
 private struct ProfessionalMessageDTO: Decodable {
@@ -1553,6 +1546,7 @@ private struct PublicSpecialistReviewDTO: Decodable {
 
 private struct BlogCatalogDTO: Decodable {
     let items: [BlogArticleDTO]
+    let pages: Int?
 }
 
 private struct BlogArticleDTO: Decodable {
@@ -1671,6 +1665,7 @@ private struct NotificationPayloadDTO: Decodable {
 
 private struct TasksResponseDTO: Decodable {
     let tasks: [RepairTaskDTO]
+    let pages: Int?
 }
 
 private struct ServiceCatalogResponseDTO: Decodable {

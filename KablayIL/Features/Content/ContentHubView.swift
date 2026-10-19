@@ -8,6 +8,7 @@ struct ContentHubView: View {
 
     @Environment(AppState.self) private var appState
     @State private var mode: SectionMode = .guides
+    @State private var visibleArticleCount = 12
 
     var body: some View {
         List {
@@ -50,8 +51,17 @@ struct ContentHubView: View {
                         staleAfter: OfflineFreshness.articles,
                         locale: appState.locale
                     )
-                    ForEach(appState.blogArticles) { article in
+                    ForEach(Array(appState.blogArticles.prefix(visibleArticleCount))) { article in
                         NavigationLink { ArticleView(article: article) } label: { ArticleRow(article: article) }
+                    }
+                    if appState.blogArticles.count > visibleArticleCount || appState.blogLoadedPage < appState.blogPages {
+                        Button(appState.locale.text(he: "עוד מאמרים", ru: "Ещё статьи", en: "More articles")) {
+                            Task {
+                                await appState.loadMoreBlogArticles()
+                                visibleArticleCount += 12
+                            }
+                        }
+                        .disabled(appState.isLoadingBlog)
                     }
                 }
             }
