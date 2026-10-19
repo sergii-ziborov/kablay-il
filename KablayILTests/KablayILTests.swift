@@ -856,19 +856,19 @@ final class KablayILTests: XCTestCase {
         XCTAssertTrue(leads.isEmpty)
     }
 
-    func testProfessionalCanSubmitProposalWithOptionalMessageAndPrice() async throws {
+    func testProfessionalUnlocksClientNumberWithoutSendingMessage() async throws {
         let session = makeMockSession { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/proposals")
             guard let data = requestBodyData(request),
                   let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                XCTFail("Missing proposal JSON body")
+                XCTFail("Missing contact-unlock JSON body")
                 return #"{"proposal":{"id":"proposal-live-1"}}"#
             }
             XCTAssertEqual(body["task_id"] as? String, "task-live-1")
-            XCTAssertEqual(body["message"] as? String, "I can arrive this evening")
-            XCTAssertEqual(body["price"] as? Int, 420)
-            return #"{"proposal":{"id":"proposal-live-1"},"unlock_cost":5}"#
+            XCTAssertNil(body["message"])
+            XCTAssertNil(body["price"])
+            return #"{"proposal":{"id":"proposal-live-1"},"client_contact":{"name":"Client","phone":"+972501112233","email":null},"unlock_cost":5}"#
         }
         let api = APIClient(
             apiBaseURL: URL(string: "https://example.test/")!,
@@ -876,13 +876,11 @@ final class KablayILTests: XCTestCase {
             session: session
         )
 
-        let proposalID = try await api.submitProposal(
+        let contact = try await api.submitProposal(
             taskID: "task-live-1",
-            message: "I can arrive this evening",
-            price: 420,
             token: "specialist-token"
         )
-        XCTAssertEqual(proposalID, "proposal-live-1")
+        XCTAssertEqual(contact?.phone, "+972501112233")
     }
 
     func testProfessionalCanAcceptWithdrawAndCompleteWorkThroughLifecycleEndpoints() async throws {

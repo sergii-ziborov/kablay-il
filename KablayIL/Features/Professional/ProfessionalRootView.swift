@@ -15,9 +15,6 @@ struct ProfessionalRootView: View {
             Tab(appState.locale.text(he: "המשימות שלי", ru: "Мои задачи", en: "My work"), systemImage: "archivebox.fill") {
                 NavigationStack { ProfessionalTasksView() }
             }
-            Tab(appState.locale.text(he: "צ׳אטים", ru: "Чаты", en: "Chats"), systemImage: "bubble.left.and.bubble.right.fill") {
-                NavigationStack { ProfessionalChatsView() }
-            }
             Tab(appState.locale.text(he: "פרופיל", ru: "Анкета", en: "Profile"), systemImage: "person.crop.circle.fill") {
                 NavigationStack { ProfessionalProfileHubView() }
             }
@@ -262,8 +259,10 @@ private struct ProfessionalLeadDetailView: View {
     @State private var isTranslating = false
     @State private var detailedTask: RepairTask?
     @State private var detailUnavailable = false
-    @State private var showsProposalComposer = false
+    @State private var showsContactUnlockConfirmation = false
+    @State private var isUnlockingContact = false
     @State private var hasSubmittedProposal = false
+    @State private var unlockedContact: TaskClientContact?
 
     var body: some View {
         ScrollView {
@@ -325,17 +324,21 @@ private struct ProfessionalLeadDetailView: View {
 
                 TaskIdentifierCard(identifier: lead.id)
 
-                Label(
-                    appState.locale.text(
-                        he: "הכתובת והקשר המדויקים נשארים מוגנים עד לפתיחת הבקשה לפי כללי KABLAY.",
-                        ru: "Точный адрес и контакт защищены до открытия заявки по правилам KABLAY.",
-                        en: "The exact address and contact remain protected until the request is unlocked under KABLAY rules."
-                    ),
-                    systemImage: "lock.shield.fill"
-                )
-                .font(.footnote).foregroundStyle(.secondary)
-                .padding(16)
-                .brandCard()
+                if let client = unlockedContact ?? detailedTask?.client, client.phone?.isEmpty == false {
+                    ProfessionalClientContactCard(client: client)
+                } else {
+                    Label(
+                        appState.locale.text(
+                            he: "מספר הלקוח והכתובת המדויקת יוצגו אחרי פתיחת פרטי הקשר.",
+                            ru: "Номер клиента и точный адрес появятся после открытия контакта.",
+                            en: "The client's number and exact address appear after you unlock the contact."
+                        ),
+                        systemImage: "lock.shield.fill"
+                    )
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .padding(16)
+                    .brandCard()
+                }
             }
             .padding()
         }
@@ -347,31 +350,58 @@ private struct ProfessionalLeadDetailView: View {
         .safeAreaInset(edge: .bottom) {
             ProfessionalProposalActionBar(
                 state: detailedTask?.responseState,
-                hasSubmitted: hasSubmittedProposal,
-                detailUnavailable: detailUnavailable
+                hasSubmitted: hasSubmittedProposal || unlockedContact?.phone?.isEmpty == false || detailedTask?.client?.phone?.isEmpty == false,
+                detailUnavailable: detailUnavailable,
+                isUnlocking: isUnlockingContact
             ) {
-                showsProposalComposer = true
+                showsContactUnlockConfirmation = true
             }
         }
-        .sheet(isPresented: $showsProposalComposer) {
-            ProposalComposerSheet(
-                taskID: lead.id,
-                taskTitle: displayedTitle,
-                responseState: detailedTask?.responseState
-            ) {
-                hasSubmittedProposal = true
+        .confirmationDialog(
+            appState.locale.text(he: "פתיחת מספר הלקוח", ru: "Открыть номер клиента", en: "Unlock client number"),
+            isPresented: $showsContactUnlockConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(appState.locale.text(
+                he: "פתיחה · \(contactUnlockCost) נקודות",
+                ru: "Открыть · \(contactUnlockCost) баллов",
+                en: "Unlock · \(contactUnlockCost) credits"
+            )) {
+                Task { await unlockContact() }
             }
+        } message: {
+            Text(appState.locale.text(
+                he: "הנקודות מחויבות על הצגת מספר הלקוח. ההזמנה תוסתר מהלוח הכללי ל-45 דקות ותישאר זמינה באזור העבודה שלכם.",
+                ru: "Баллы списываются за показ номера клиента. Заказ исчезнет из общей ленты на 45 минут, но останется в «Моей работе».",
+                en: "Credits pay to reveal the client's number. The job leaves the shared feed for 45 minutes and stays in My work."
+            ))
         }
     }
 
-    /// The response bar must never wait forever on the task details. When they
-    /// do not arrive, the offer stays reachable and the server keeps deciding
-    /// whether it is allowed.
+    /// Keep the unlock available if details fail to load; the server still
+    /// validates the balance and task state before showing the phone number.
     private func loadDetail() async {
         detailUnavailable = false
         let loaded = await appState.loadTask(id: lead.id)
         detailedTask = loaded
         detailUnavailable = loaded == nil
+    }
+
+    private var contactUnlockCost: Int {
+        detailedTask?.responseState?.costCredits ?? (appState.session?.user.role == .admin ? 0 : 5)
+    }
+
+    @MainActor
+    private func unlockContact() async {
+        guard !isUnlockingContact else { return }
+        isUnlockingContact = true
+        defer { isUnlockingContact = false }
+        let result = await appState.unlockClientContact(taskID: lead.id)
+        if result.succeeded {
+            unlockedContact = result.contact
+            hasSubmittedProposal = true
+            await loadDetail()
+        }
     }
 
     private var attachmentURLs: [URL] {
@@ -418,6 +448,7 @@ private struct ProfessionalProposalActionBar: View {
     let state: TaskResponseState?
     let hasSubmitted: Bool
     var detailUnavailable = false
+    var isUnlocking = false
     let action: () -> Void
 
     var body: some View {
@@ -425,7 +456,7 @@ private struct ProfessionalProposalActionBar: View {
             if state?.needsVerification == true { verificationNotice }
             Button(action: action) {
                 Group {
-                    if state == nil, !detailUnavailable {
+                    if isUnlocking || (state == nil && !detailUnavailable) {
                         ProgressView()
                     } else {
                         Label(buttonTitle, systemImage: buttonSystemImage)
@@ -438,8 +469,8 @@ private struct ProfessionalProposalActionBar: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Brand.red)
-            .disabled(!canSubmit)
-            .accessibilityIdentifier("professional.task.respond")
+            .disabled(!canSubmit || isUnlocking)
+            .accessibilityIdentifier("professional.task.unlockContact")
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -486,24 +517,23 @@ private struct ProfessionalProposalActionBar: View {
 
     private var canSubmit: Bool {
         guard !hasSubmitted else { return false }
-        // Without the task details the app cannot know the price or the
-        // cooldown, but the server validates every offer anyway, so the
-        // specialist keeps a working button instead of a stuck spinner.
+        // The confirmation explains the contact price before any charge.
+        // The server remains the final authority on eligibility and balance.
         guard let state else { return detailUnavailable }
         return state.available
     }
 
     private var buttonSystemImage: String {
-        hasSubmitted || state?.alreadySubmitted == true ? "checkmark.circle.fill" : "paperplane.fill"
+        hasSubmitted || state?.alreadySubmitted == true ? "checkmark.circle.fill" : "phone.fill"
     }
 
     private var buttonTitle: String {
         if hasSubmitted || state?.alreadySubmitted == true {
-            return appState.locale.text(he: "ההצעה נשלחה", ru: "Отклик отправлен", en: "Proposal sent")
+            return appState.locale.text(he: "מספר הלקוח נפתח", ru: "Номер клиента открыт", en: "Client number unlocked")
         }
         guard let state else {
             return detailUnavailable
-                ? appState.locale.text(he: "שליחת הצעה", ru: "Откликнуться", en: "Respond")
+                ? appState.locale.text(he: "פתיחת מספר הלקוח", ru: "Открыть номер клиента", en: "Unlock client number")
                 : appState.locale.text(he: "טוען…", ru: "Загрузка…", en: "Loading…")
         }
         guard state.available else {
@@ -513,156 +543,17 @@ private struct ProfessionalProposalActionBar: View {
             case "TASK_CLOSED":
                 return appState.locale.text(he: "הבקשה נסגרה", ru: "Заявка закрыта", en: "Request closed")
             default:
-                return appState.locale.text(he: "לא ניתן לשלוח הצעה", ru: "Отклик недоступен", en: "Response unavailable")
+                return appState.locale.text(he: "לא ניתן לפתוח את המספר", ru: "Номер пока недоступен", en: "Contact unavailable")
             }
         }
         if let cost = state.costCredits, cost > 0 {
             return appState.locale.text(
-                he: "שליחת הצעה · \(cost) נקודות",
-                ru: "Откликнуться · \(cost) баллов",
-                en: "Respond · \(cost) credits"
+                he: "פתיחת מספר · \(cost) נקודות",
+                ru: "Открыть номер · \(cost) баллов",
+                en: "Unlock number · \(cost) credits"
             )
         }
-        return appState.locale.text(he: "שליחת הצעה", ru: "Откликнуться", en: "Respond")
-    }
-}
-
-private struct ProposalComposerSheet: View {
-    @Environment(AppState.self) private var appState
-    @Environment(\.dismiss) private var dismiss
-    let taskID: String
-    let taskTitle: String
-    let responseState: TaskResponseState?
-    let onSubmitted: () -> Void
-
-    @State private var message = ""
-    @State private var price = ""
-    @State private var isSubmitting = false
-    @FocusState private var focusedField: Field?
-
-    private enum Field: Hashable { case message, price }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Text(taskTitle)
-                        .font(.headline)
-                }
-
-                Section {
-                    TextField(
-                        appState.locale.text(
-                            he: "כתבו בקצרה כיצד תוכלו לעזור",
-                            ru: "Коротко напишите, как вы можете помочь",
-                            en: "Briefly explain how you can help"
-                        ),
-                        text: $message,
-                        axis: .vertical
-                    )
-                    .lineLimit(4...8)
-                    .focused($focusedField, equals: .message)
-                } header: {
-                    Text(appState.locale.text(he: "הודעה ללקוח", ru: "Сообщение клиенту", en: "Message to client"))
-                } footer: {
-                    Text(appState.locale.text(
-                        he: "אין לציין טלפון, אימייל או WhatsApp לפני קבלת ההצעה.",
-                        ru: "Не указывайте телефон, email или WhatsApp до принятия отклика.",
-                        en: "Do not include phone, email, or WhatsApp details before acceptance."
-                    ))
-                }
-
-                Section {
-                    TextField(
-                        appState.locale.text(he: "לא חובה, ₪", ru: "Необязательно, ₪", en: "Optional, ₪"),
-                        text: $price
-                    )
-                    .keyboardType(.numberPad)
-                    .focused($focusedField, equals: .price)
-                } header: {
-                    Text(appState.locale.text(he: "מחיר מוצע", ru: "Предлагаемая цена", en: "Offered price"))
-                } footer: {
-                    Text(priceFooter)
-                }
-            }
-            .navigationTitle(appState.locale.text(he: "שליחת הצעה", ru: "Отклик", en: "Proposal"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(role: .cancel) { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(appState.locale.text(he: "ביטול", ru: "Отмена", en: "Cancel"))
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button { Task { await submit() } } label: {
-                        if isSubmitting {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSubmitting || !isPriceValid)
-                    .accessibilityLabel(appState.locale.text(he: "שליחה", ru: "Отправить", en: "Send"))
-                }
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button {
-                        focusedField = nil
-                    } label: {
-                        Label(
-                            appState.locale.text(he: "סיום", ru: "Готово", en: "Done"),
-                            systemImage: "keyboard.chevron.compact.down"
-                        )
-                    }
-                }
-            }
-        }
-        .interactiveDismissDisabled(isSubmitting)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-
-    private var parsedPrice: Int? {
-        let value = price.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : Int(value)
-    }
-
-    private var isPriceValid: Bool {
-        price.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (parsedPrice ?? 0) > 0
-    }
-
-    private var priceFooter: String {
-        if let cost = responseState?.costCredits, cost > 0 {
-            return appState.locale.text(
-                he: "שליחת ההצעה תפתח את פרטי הלקוח ותחייב \(cost) נקודות.",
-                ru: "Отклик откроет контакт клиента и спишет \(cost) баллов.",
-                en: "Responding unlocks the client contact and uses \(cost) credits."
-            )
-        }
-        return appState.locale.text(
-            he: "המחיר אינו חובה וניתן לסיכום מאוחר יותר.",
-            ru: "Цену можно не указывать и согласовать позже.",
-            en: "The price is optional and can be agreed later."
-        )
-    }
-
-    @MainActor
-    private func submit() async {
-        guard isPriceValid else { return }
-        focusedField = nil
-        isSubmitting = true
-        defer { isSubmitting = false }
-        let submitted = await appState.submitProposal(
-            taskID: taskID,
-            message: message,
-            price: parsedPrice
-        )
-        if submitted {
-            onSubmitted()
-            dismiss()
-        }
+        return appState.locale.text(he: "פתיחת מספר הלקוח", ru: "Открыть номер клиента", en: "Unlock client number")
     }
 }
 
@@ -2297,9 +2188,9 @@ struct CreditsView: View {
                 Text(appState.locale.text(he: "טעינת נקודות", ru: "Пополнить баллы", en: "Top up credits"))
             } footer: {
                 Text(appState.locale.text(
-                    he: "נקודות משמשות למענה למשימות. מענה אינו מבטיח הסכם, עבודה או תוצאה.",
-                    ru: "Баллы нужны для отклика на задачи. Отклик не гарантирует договор, работу или результат.",
-                    en: "Credits are used to respond to tasks. A response does not guarantee an agreement, job, or result."
+                    he: "5 נקודות מחויבות בפתיחת מספר הלקוח במשימה. פתיחת המספר אינה מבטיחה הסכם, עבודה או תוצאה.",
+                    ru: "5 баллов списываются за открытие номера клиента в заказе. Доступ к номеру не гарантирует договор, работу или результат.",
+                    en: "Revealing a task client's number costs 5 credits. Contact access does not guarantee an agreement, job, or result."
                 ))
             }
         }
@@ -2366,7 +2257,7 @@ struct PremiumView: View {
     private var benefits: [String] {
         [
             appState.locale.text(he: "הטלפון ו-WhatsApp זמינים בפרופיל הציבורי", ru: "Телефон и WhatsApp доступны в публичном профиле", en: "Phone and WhatsApp are available on your public profile"),
-            appState.locale.text(he: "פניות לפרופיל אינן מחייבות נקודות", ru: "Обращения через профиль не списывают баллы", en: "Profile enquiries do not spend your credits"),
+            appState.locale.text(he: "פתיחת הטלפון שלכם בפרופיל אינה מחייבת נקודות", ru: "Открытие вашего номера в профиле не списывает баллы", en: "Client opens of your profile phone do not spend your credits"),
         ]
     }
 
@@ -2400,9 +2291,9 @@ struct PremiumView: View {
                         .symbolRenderingMode(.hierarchical)
                 }
                 Text(appState.locale.text(
-                    he: "תגובה ראשונה להזמנה עדיין עולה 5 נקודות ומשולמת מחבילת נקודות.",
-                    ru: "Первый отклик на заказ по-прежнему стоит 5 баллов из пакета.",
-                    en: "The first response to a job still costs 5 credits from a credit pack."
+                    he: "פתיחת מספר הלקוח במשימה עדיין עולה 5 נקודות מחבילת נקודות.",
+                    ru: "Открытие номера клиента по заказу по-прежнему стоит 5 баллов из пакета.",
+                    en: "Opening a task client's number still costs 5 credits from a credit pack."
                 ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)

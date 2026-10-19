@@ -443,27 +443,37 @@ actor APIClient {
         return response.proposals.map(\.model)
     }
 
-    func submitProposal(taskID: String, message: String?, price: Int?, token: String) async throws -> String {
+    func submitProposal(taskID: String, token: String) async throws -> TaskClientContact? {
         struct Body: Encodable {
             let taskID: String
-            let message: String?
-            let price: Int?
         }
         struct Proposal: Decodable { let id: String }
-        struct Response: Decodable { let proposal: Proposal }
-        let normalizedMessage = message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        struct Contact: Decodable {
+            let name: String?
+            let phone: String?
+            let email: String?
+        }
+        struct Response: Decodable {
+            let proposal: Proposal
+            let clientContact: Contact?
+        }
 
         let response: Response = try await request(
             path: "proposals",
             method: "POST",
             token: token,
-            body: Body(
-                taskID: taskID,
-                message: normalizedMessage.flatMap { $0.isEmpty ? nil : String($0.prefix(2_000)) },
-                price: price
-            )
+            body: Body(taskID: taskID)
         )
-        return response.proposal.id
+        return response.clientContact.map {
+            TaskClientContact(
+                id: taskID,
+                name: $0.name?.nilIfBlank ?? "Client",
+                phone: $0.phone?.nilIfBlank,
+                email: $0.email?.nilIfBlank,
+                rating: nil,
+                reviewCount: nil
+            )
+        }
     }
 
     func updateProposal(id: String, status: String, token: String) async throws {

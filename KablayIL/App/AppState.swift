@@ -1039,25 +1039,20 @@ final class AppState {
         }
     }
 
-    func submitProposal(taskID: String, message: String?, price: Int?) async -> Bool {
+    func unlockClientContact(taskID: String) async -> (succeeded: Bool, contact: TaskClientContact?) {
         guard let session, isProfessional, workspaceMode == .professional else {
             errorMessage = locale.text(
-                he: "יש לעבור לחשבון בעל מקצוע כדי לשלוח הצעה",
-                ru: "Переключитесь на аккаунт специалиста, чтобы отправить отклик",
-                en: "Switch to the professional account to send a proposal"
+                he: "יש לעבור לחשבון בעל מקצוע כדי לפתוח את מספר הלקוח",
+                ru: "Переключитесь в кабинет специалиста, чтобы открыть номер клиента",
+                en: "Switch to the professional workspace to unlock the client's number"
             )
-            return false
+            return (false, nil)
         }
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
-            _ = try await api.submitProposal(
-                taskID: taskID,
-                message: message,
-                price: price,
-                token: session.token
-            )
+            let contact = try await api.submitProposal(taskID: taskID, token: session.token)
             professionalLeads.removeAll { $0.id == taskID }
             OfflineDataStore.saveDeferred(professionalLeads, key: "professional-leads", accountID: session.user.id)
             if let proposals = try? await api.fetchProfessionalProposals(token: session.token) {
@@ -1071,13 +1066,13 @@ final class AppState {
                 professionalConversations = conversations
                 OfflineDataStore.saveDeferred(conversations, key: "professional-conversations", accountID: session.user.id)
             }
-            return true
+            return (true, contact)
         } catch let APIError.server(_, message, code) {
             errorMessage = proposalErrorMessage(code: code, fallback: message)
-            return false
+            return (false, nil)
         } catch {
             report(error)
-            return false
+            return (false, nil)
         }
     }
 
@@ -1600,12 +1595,12 @@ final class AppState {
         switch code {
         case "INSUFFICIENT_CREDITS":
             locale.text(
-                he: "אין מספיק נקודות לפתיחת פרטי הלקוח",
-                ru: "Недостаточно баллов для отклика и открытия контакта клиента",
-                en: "Not enough credits to respond and unlock the client contact"
+                he: "אין מספיק נקודות לפתיחת מספר הלקוח",
+                ru: "Недостаточно баллов для открытия номера клиента",
+                en: "Not enough credits to unlock the client's number"
             )
         case "DUPLICATE_PROPOSAL":
-            locale.text(he: "כבר שלחתם הצעה לבקשה הזו", ru: "Вы уже откликнулись на эту заявку", en: "You already responded to this request")
+            locale.text(he: "כבר פתחתם את מספר הלקוח למשימה הזו", ru: "Вы уже открыли номер клиента для этого заказа", en: "You already unlocked this client's number")
         case "PROFILE_NOT_VERIFIED":
             locale.text(
                 he: "הפרופיל עדיין לא אומת. לקבלת עבודות פנו למנהל KABLAY לאימות.",
