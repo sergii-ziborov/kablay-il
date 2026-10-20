@@ -26,7 +26,7 @@ test "$(sips -g pixelHeight "$app_icon" | awk '/pixelHeight/ { print $2 }')" = "
 test "$(sips -g hasAlpha "$app_icon" | awk '/hasAlpha/ { print $2 }')" = "no"
 
 grep -q 'MARKETING_VERSION: "1.0.0"' project.yml
-grep -q 'CURRENT_PROJECT_VERSION: "47"' project.yml
+grep -q 'CURRENT_PROJECT_VERSION: "48"' project.yml
 grep -q 'PRODUCT_BUNDLE_IDENTIFIER: il.co.kablay.app' project.yml
 grep -q 'ITSAppUsesNonExemptEncryption: false' project.yml
 grep -q '<string>production</string>' KablayIL/KablayIL.entitlements
@@ -72,7 +72,7 @@ xcodebuild \
 app_dir="$repo_dir/build/ReleaseValidation/Build/Products/Release-iphonesimulator/KablayIL.app"
 test -f "$app_dir/PrivacyInfo.xcprivacy"
 test "$(plutil -extract CFBundleShortVersionString raw -o - "$app_dir/Info.plist")" = "1.0.0"
-test "$(plutil -extract CFBundleVersion raw -o - "$app_dir/Info.plist")" = "47"
+test "$(plutil -extract CFBundleVersion raw -o - "$app_dir/Info.plist")" = "48"
 test "$(plutil -extract KABLAY_API_BASE_URL raw -o - "$app_dir/Info.plist")" = "https://api.kablay.co.il"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$app_dir/Info.plist")" = "kablay"
 test "$(plutil -extract KABLAY_TRIAGE_BASE_URL raw -o - "$app_dir/Info.plist")" = "https://kablay-triage.sergii-ziborov.workers.dev"

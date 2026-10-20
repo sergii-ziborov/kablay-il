@@ -2230,6 +2230,13 @@ struct CreditsView: View {
     }
 
     private func transactionTitle(_ transaction: CreditTransaction) -> String {
+        if transaction.id.hasPrefix("campaign:specialist-thank-you-2026-10:") {
+            return appState.locale.text(
+                he: "מתנה מ-KABLAY · ‏30 נקודות",
+                ru: "Подарок от KABLAY · 30 баллов",
+                en: "Gift from KABLAY · 30 credits"
+            )
+        }
         if transaction.id.hasPrefix("apple_reversal:") {
             return appState.locale.text(
                 he: "החזר רכישה מ-Apple",
@@ -2241,6 +2248,7 @@ struct CreditsView: View {
         case "purchase": appState.locale.text(he: "טעינה", ru: "Пополнение", en: "Top up")
         case "refund": appState.locale.text(he: "החזר", ru: "Возврат", en: "Refund")
         case "admin_debit": appState.locale.text(he: "חיוב", ru: "Списание", en: "Debit")
+        case "admin_credit": appState.locale.text(he: "זיכוי מהנהלת KABLAY", ru: "Начисление от KABLAY", en: "Credit from KABLAY")
         default: appState.locale.text(he: "שימוש", ru: "Списание", en: "Spent")
         }
     }
