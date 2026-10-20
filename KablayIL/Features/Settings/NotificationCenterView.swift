@@ -7,7 +7,14 @@ struct NotificationCenterView: View {
     var body: some View {
         List {
             ForEach(appState.notifications) { notification in
-                if let taskID = notification.taskID {
+                if notification.kind == "admin_credit_gift" && appState.isProfessional {
+                    NavigationLink {
+                        CreditsView()
+                            .task { await appState.markNotificationRead(notification) }
+                    } label: {
+                        notificationRow(notification)
+                    }
+                } else if let taskID = notification.taskID {
                     NavigationLink {
                         NotificationDestinationView(destination: NotificationDestination(
                             taskID: taskID,
@@ -58,14 +65,21 @@ struct NotificationCenterView: View {
     }
 
     private func notificationRow(_ notification: AppNotification) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        let fromAdministration = notification.kind == "admin_credit_gift" || notification.kind == "admin_announcement"
+        let accent = fromAdministration ? Color(red: 0.52, green: 0.29, blue: 0.77) : Brand.red
+        return HStack(alignment: .top, spacing: 14) {
             Image(systemName: displayIcon(notification))
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(notification.isRead ? Color.primary : Brand.red)
+                .foregroundStyle(notification.isRead ? Color.primary : accent)
                 .frame(width: 44, height: 44)
-                .background((notification.isRead ? Color.primary : Brand.red).opacity(0.12), in: .circle)
+                .background((notification.isRead ? Color.primary : accent).opacity(0.12), in: .circle)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 9) {
+                if fromAdministration {
+                    Text(appState.locale.text(he: "מהנהלת KABLAY", ru: "От администрации KABLAY", en: "From KABLAY"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(accent)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(displayTitle(notification))
                         .font(.headline)
@@ -75,10 +89,10 @@ struct NotificationCenterView: View {
                     if !notification.isRead {
                         Text(appState.locale.text(he: "חדש", ru: "Новое", en: "New"))
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(Brand.red)
+                            .foregroundStyle(accent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Brand.red.opacity(0.12), in: Capsule())
+                            .background(accent.opacity(0.12), in: Capsule())
                     }
                 }
                 Text(displayBody(notification))
@@ -95,10 +109,10 @@ struct NotificationCenterView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+        .background(fromAdministration ? accent.opacity(0.09) : Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
         .overlay {
             RoundedRectangle(cornerRadius: 20)
-                .strokeBorder(Brand.red.opacity(notification.isRead ? 0 : 0.25), lineWidth: 1)
+                .strokeBorder(accent.opacity(fromAdministration ? 0.35 : (notification.isRead ? 0 : 0.25)), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))

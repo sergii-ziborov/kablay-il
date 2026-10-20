@@ -1635,6 +1635,18 @@ private struct NotificationDTO: Decodable {
         let task = payload.taskTitle?.nilIfBlank ?? ""
         let content: (LocalizedValue, LocalizedValue, String)
         switch kind {
+        case "admin_credit_gift":
+            content = (
+                payload.titleLocalized ?? payload.title?.localized ?? .init(he: "מתנה מ-KABLAY: ‏30 נקודות", ru: "Подарок от KABLAY: 30 баллов", en: "A gift from KABLAY: 30 credits"),
+                payload.bodyLocalized ?? payload.body?.localized ?? .init(he: "הוספנו 30 נקודות לחשבון שלכם.", ru: "Мы начислили 30 баллов на ваш счёт.", en: "We added 30 credits to your balance."),
+                "gift.fill"
+            )
+        case "admin_announcement":
+            content = (
+                payload.titleLocalized ?? payload.title?.localized ?? .init(he: "הודעה מ-KABLAY", ru: "Сообщение от KABLAY", en: "From KABLAY"),
+                payload.bodyLocalized ?? payload.body?.localized ?? .init(he: "עדכון חדש מהצוות.", ru: "Новое сообщение от команды.", en: "A new update from the team."),
+                "megaphone.fill"
+            )
         case "task_assignment":
             content = (
                 .init(he: "בעל מקצוע נבחר", ru: "Мастер выбран", en: "Specialist selected"),
@@ -1649,9 +1661,9 @@ private struct NotificationDTO: Decodable {
             content = (
                 .init(he: "הודעה חדשה", ru: "Новое сообщение", en: "New message"),
                 .init(
-                    he: payload.body?.nilIfBlank ?? (task.isEmpty ? "פתחו את הצ׳אט כדי לקרוא את ההודעה." : "הודעה חדשה על הבקשה „\(task)”. פתחו את הצ׳אט."),
-                    ru: payload.body?.nilIfBlank ?? (task.isEmpty ? "Откройте чат, чтобы прочитать сообщение." : "Новое сообщение по заявке «\(task)». Откройте чат."),
-                    en: payload.body?.nilIfBlank ?? (task.isEmpty ? "Open the chat to read the message." : "New message about “\(task)”. Open the chat.")
+                    he: payload.body?.localized.he.nilIfBlank ?? (task.isEmpty ? "פתחו את הצ׳אט כדי לקרוא את ההודעה." : "הודעה חדשה על הבקשה „\(task)”. פתחו את הצ׳אט."),
+                    ru: payload.body?.localized.ru.nilIfBlank ?? (task.isEmpty ? "Откройте чат, чтобы прочитать сообщение." : "Новое сообщение по заявке «\(task)». Откройте чат."),
+                    en: payload.body?.localized.en.nilIfBlank ?? (task.isEmpty ? "Open the chat to read the message." : "New message about “\(task)”. Open the chat.")
                 ),
                 "message.fill"
             )
@@ -1696,14 +1708,14 @@ private struct NotificationDTO: Decodable {
                 "person.crop.circle.badge.plus"
             )
         default:
-            let serverTitle = payload.title?.nilIfBlank
-            let fallbackBody = payload.body?.nilIfBlank
+            let serverTitle = payload.title?.localized
+            let fallbackBody = payload.body?.localized
             content = (
-                .init(he: serverTitle ?? "עדכון חדש", ru: serverTitle ?? "Новое событие", en: serverTitle ?? "New update"),
+                .init(he: serverTitle?.he.nilIfBlank ?? "עדכון חדש", ru: serverTitle?.ru.nilIfBlank ?? "Новое событие", en: serverTitle?.en.nilIfBlank ?? "New update"),
                 .init(
-                    he: fallbackBody ?? (task.isEmpty ? "פתחו את הפרטים כדי לראות מה השתנה." : "עדכון בבקשה „\(task)”."),
-                    ru: fallbackBody ?? (task.isEmpty ? "Откройте уведомление, чтобы узнать подробности." : "Изменение по заявке «\(task)»."),
-                    en: fallbackBody ?? (task.isEmpty ? "Open the notification for details." : "Update about “\(task)”.")
+                    he: fallbackBody?.he.nilIfBlank ?? (task.isEmpty ? "פתחו את הפרטים כדי לראות מה השתנה." : "עדכון בבקשה „\(task)”."),
+                    ru: fallbackBody?.ru.nilIfBlank ?? (task.isEmpty ? "Откройте уведомление, чтобы узнать подробности." : "Изменение по заявке «\(task)»."),
+                    en: fallbackBody?.en.nilIfBlank ?? (task.isEmpty ? "Open the notification for details." : "Update about “\(task)”.")
                 ),
                 "bell.badge.fill"
             )
@@ -1729,9 +1741,24 @@ private struct NotificationPayloadDTO: Decodable {
     let taskTitle: String?
     let specialistName: String?
     let conversationId: String?
-    let body: String?
-    let title: String?
+    let body: NotificationTextDTO?
+    let title: NotificationTextDTO?
+    let bodyLocalized: LocalizedValue?
+    let titleLocalized: LocalizedValue?
     let url: String?
+}
+
+private struct NotificationTextDTO: Decodable {
+    let localized: LocalizedValue
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let text = try? value.decode(String.self) {
+            localized = .init(he: text, ru: text, en: text)
+        } else {
+            localized = try value.decode(LocalizedValue.self)
+        }
+    }
 }
 
 private struct TasksResponseDTO: Decodable {
