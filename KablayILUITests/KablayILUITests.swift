@@ -397,6 +397,9 @@ final class KablayILUITests: XCTestCase {
         credits.tap()
         XCTAssertTrue(app.navigationBars["Credits"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Top up credits"].waitForExistence(timeout: 20))
+        app.swipeUp()
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["20 credits"].waitForExistence(timeout: 10))
         keepScreenshot(app, named: "review-credits")
 
         app.navigationBars["Credits"].buttons.element(boundBy: 0).tap()
