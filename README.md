@@ -21,6 +21,8 @@ Clients can join as professionals in the app: verify a phone number, choose trad
 
 The **Pro workspace** has three areas: *Jobs* for relevant requests, *My work* for unlocked contacts and active jobs, and *Profile* for availability, credits, statistics and the public portfolio. Opening a listed task client's phone and WhatsApp costs 5 credits for every professional. The task leaves the shared specialist feed for 45 minutes after the number is opened and remains in the opener's *My work*. No message or proposed price is required. The optional monthly Premium subscription keeps phone and WhatsApp available on the professional's public profile without charges when clients open those contacts. Premium does not waive task client-number unlocks. Credit packs and Premium are purchased with StoreKit; the server verifies Apple transactions before changing a balance or entitlement. The purchase screen shows Apple's local price and renewal terms, and provides a restore option.
 
+For an Israeli Apple account, the current packs are 20 credits for ₪19.90, 50 for ₪39, 100 for ₪69, and 200 for ₪119. That covers up to 4, 10, 20, or 40 different task contacts. Premium is ₪29.90 per month in Israel. The app warns when fewer than 5 credits remain and links directly to top-up. StoreKit shows the final local price before confirmation; purchases do not guarantee a job or income.
+
 ## Screenshots
 
 These are captures of the running app from the previous build. The full gallery has **25 screens** across iPhone and iPad, in English, Russian and Hebrew, including the Pro workspace. Open an image for its original size.

@@ -353,10 +353,14 @@ final class KablayILUITests: XCTestCase {
             for digit in "123456" { app.buttons[String(digit)].tap() }
         }
 
+        let signIn = app.buttons["Sign in by phone"]
         if app.tabBars.buttons["Account"].exists {
-            app.tabBars.buttons["Account"].tap()
-            let signIn = app.buttons["Sign in by phone"]
-            if signIn.waitForExistence(timeout: 5) {
+            for _ in 0..<4 {
+                app.tabBars.buttons["Account"].tap()
+                if signIn.waitForExistence(timeout: 5) { break }
+            }
+            XCTAssertTrue(signIn.exists, "The Account tab must show the phone sign-in action")
+            if signIn.exists {
                 signIn.tap()
                 let digits = phone.filter(\.isNumber)
                 let localPhone = digits.hasPrefix("972") ? "0" + String(digits.dropFirst(3)) : digits

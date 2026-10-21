@@ -260,6 +260,8 @@ private struct ProfessionalLeadDetailView: View {
     @State private var detailedTask: RepairTask?
     @State private var detailUnavailable = false
     @State private var showsContactUnlockConfirmation = false
+    @State private var showsInsufficientCredits = false
+    @State private var showsCredits = false
     @State private var isUnlockingContact = false
     @State private var hasSubmittedProposal = false
     @State private var unlockedContact: TaskClientContact?
@@ -345,8 +347,28 @@ private struct ProfessionalLeadDetailView: View {
         .background(Brand.canvas)
         .navigationTitle(appState.locale.text(he: "פרטי הזמנה", ru: "Детали заказа", en: "Job details"))
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: lead.id) { await loadDetail() }
+        .task(id: lead.id) {
+            async let detail: Void = loadDetail()
+            async let balance: Void = appState.loadCreditAccount()
+            _ = await (detail, balance)
+        }
         .refreshable { await loadDetail() }
+        .navigationDestination(isPresented: $showsCredits) { CreditsView() }
+        .alert(
+            appState.locale.text(he: "אין מספיק נקודות", ru: "Баллов не хватает", en: "Not enough credits"),
+            isPresented: $showsInsufficientCredits
+        ) {
+            Button(appState.locale.text(he: "טעינת נקודות", ru: "Пополнить баллы", en: "Top up credits")) {
+                showsCredits = true
+            }
+            Button(appState.locale.text(he: "מאוחר יותר", ru: "Позже", en: "Later"), role: .cancel) { }
+        } message: {
+            Text(appState.locale.text(
+                he: "פתיחת מספר הלקוח במשימה עולה \(contactUnlockCost) נקודות. אפשר לטעון נקודות בחשבון Apple או לפנות למשרד.",
+                ru: "Открытие номера клиента в заказе стоит \(contactUnlockCost) баллов. Пополните баланс через Apple или обратитесь в офис.",
+                en: "Revealing this client's number costs \(contactUnlockCost) credits. Top up with Apple or contact our office."
+            ))
+        }
         .safeAreaInset(edge: .bottom) {
             ProfessionalProposalActionBar(
                 state: detailedTask?.responseState,
@@ -394,6 +416,10 @@ private struct ProfessionalLeadDetailView: View {
     @MainActor
     private func unlockContact() async {
         guard !isUnlockingContact else { return }
+        if let balance = appState.creditAccount?.balance, balance < contactUnlockCost {
+            showsInsufficientCredits = true
+            return
+        }
         isUnlockingContact = true
         defer { isUnlockingContact = false }
         let result = await appState.unlockClientContact(taskID: lead.id)
@@ -401,6 +427,8 @@ private struct ProfessionalLeadDetailView: View {
             unlockedContact = result.contact
             hasSubmittedProposal = true
             await loadDetail()
+        } else if result.insufficientCredits {
+            showsInsufficientCredits = true
         }
     }
 
@@ -2098,6 +2126,42 @@ struct CreditsView: View {
                     )
                 }
             }
+            if let balance = appState.creditAccount?.balance, balance < 10 {
+                Section {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(appState.locale.text(
+                                he: balance < 5 ? "אין מספיק נקודות לפתיחת מספר נוסף" : "נשארה פתיחת מספר אחת בלבד",
+                                ru: balance < 5 ? "Не хватает баллов для нового контакта" : "Осталось одно открытие контакта",
+                                en: balance < 5 ? "Not enough credits for another contact" : "One contact reveal left"
+                            ))
+                            .font(.subheadline.weight(.semibold))
+                            Text(appState.locale.text(
+                                he: "בחרו חבילה למטה כדי להמשיך לפתוח מספרי לקוחות במשימות.",
+                                ru: "Выберите пакет ниже, чтобы продолжить открывать номера клиентов в заказах.",
+                                en: "Choose a pack below to keep revealing client numbers on jobs."
+                            ))
+                            .font(.footnote)
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.circle.fill")
+                    }
+                    .foregroundStyle(.orange)
+                    .padding(.vertical, 4)
+                }
+            }
+            Section(appState.locale.text(he: "איך הנקודות עובדות", ru: "Как работают баллы", en: "How credits work")) {
+                Label(appState.locale.text(
+                    he: "צפייה בהזמנות בחינם. פתיחת מספר הטלפון וה-WhatsApp של לקוח במשימה עולה 5 נקודות — פעם אחת לאותה משימה.",
+                    ru: "Просматривать заказы можно бесплатно. Открытие телефона и WhatsApp клиента стоит 5 баллов — один раз для каждого заказа.",
+                    en: "Browse jobs for free. Revealing a client's phone and WhatsApp costs 5 credits, charged once per job."
+                ), systemImage: "phone.arrow.up.right")
+                Label(appState.locale.text(
+                    he: "אחרי הפתיחה, המשימה מוסתרת מהלוח הכללי ל-45 דקות ונשארת באזור העבודה שלכם. פתיחת המספר אינה מבטיחה עבודה.",
+                    ru: "После открытия заказ на 45 минут исчезает из общей ленты, но остаётся в «Моей работе». Открытие номера не гарантирует заказ.",
+                    en: "After you reveal the number, the job leaves the shared feed for 45 minutes and stays in My work. A reveal does not guarantee work."
+                ), systemImage: "clock")
+            }
             if let account = appState.creditAccount, !account.transactions.isEmpty {
                 Section(appState.locale.text(he: "תנועות", ru: "Операции", en: "Activity")) {
                     ForEach(account.transactions) { transaction in
@@ -2119,10 +2183,19 @@ struct CreditsView: View {
             purchaseSection
             Section {
                 NavigationLink { PremiumView() } label: {
-                    HStack {
-                        Label("KABLAY Premium", systemImage: "crown.fill")
+                    HStack(alignment: .top) {
+                        Image(systemName: "crown.fill").foregroundStyle(Brand.red)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("KABLAY Premium").font(.headline)
+                            Text(appState.locale.text(
+                                he: "פרטי הקשר שלכם זמינים בפרופיל הציבורי, בלי חיוב נקודות על פתיחות הפרופיל. פתיחת מספרי לקוחות במשימות עדיין עולה 5 נקודות.",
+                                ru: "Ваш телефон виден в публичном профиле, а его открытия не расходуют баллы. Открытие номера клиента в заказе по-прежнему стоит 5 баллов.",
+                                en: "Your contact is visible on your public profile, with no credits charged for profile contact opens. Task client numbers still cost 5 credits."
+                            ))
+                            .font(.footnote).foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        Text(premiumStatusTitle).font(.subheadline).foregroundStyle(.secondary)
+                        Text(premiumStatusTitle).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -2172,7 +2245,7 @@ struct CreditsView: View {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(packTitle(for: product)).font(.headline).foregroundStyle(Brand.ink)
-                                Text(product.displayName).font(.caption).foregroundStyle(.secondary)
+                                Text(packSubtitle(for: product)).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if appState.store.purchasingProductID == product.id {
@@ -2216,6 +2289,16 @@ struct CreditsView: View {
             he: "\(amount) נקודות",
             ru: "\(amount) баллов",
             en: "\(amount) credits"
+        )
+    }
+
+    private func packSubtitle(for product: Product) -> String {
+        guard let amount = StoreService.creditAmounts[product.id] else { return product.displayName }
+        let contacts = amount / 5
+        return appState.locale.text(
+            he: "עד \(contacts) פתיחות של מספרי לקוחות",
+            ru: "До \(contacts) открытий номеров клиентов",
+            en: "Up to \(contacts) client contact reveals"
         )
     }
 
@@ -2305,6 +2388,15 @@ struct PremiumView: View {
                 ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            }
+
+            Section(appState.locale.text(he: "מתי כדאי להצטרף?", ru: "Когда подключать?", en: "When to subscribe")) {
+                Text(appState.locale.text(
+                    he: "מלאו תחילה את הפרופיל: מקצועות, אזורי שירות ותמונות עבודות. נסו קודם את נקודות המתנה ואת חבילות הנקודות. Premium מתאים כשלקוחות כבר פותחים בקביעות את פרטי הקשר בפרופיל שלכם.",
+                    ru: "Сначала заполните профиль: услуги, города и фото работ. Попробуйте подарочные баллы и пакет. Premium полезен, когда клиенты уже регулярно открывают контакты в вашем профиле.",
+                    en: "First add services, work areas and real project photos to your profile. Try your welcome credits and a pack. Premium is useful when clients regularly open contact details on your profile."
+                ))
+                .font(.subheadline)
             }
 
             Section {

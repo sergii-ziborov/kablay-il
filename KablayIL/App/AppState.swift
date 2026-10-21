@@ -1039,14 +1039,14 @@ final class AppState {
         }
     }
 
-    func unlockClientContact(taskID: String) async -> (succeeded: Bool, contact: TaskClientContact?) {
+    func unlockClientContact(taskID: String) async -> (succeeded: Bool, contact: TaskClientContact?, insufficientCredits: Bool) {
         guard let session, isProfessional, workspaceMode == .professional else {
             errorMessage = locale.text(
                 he: "יש לעבור לחשבון בעל מקצוע כדי לפתוח את מספר הלקוח",
                 ru: "Переключитесь в кабинет специалиста, чтобы открыть номер клиента",
                 en: "Switch to the professional workspace to unlock the client's number"
             )
-            return (false, nil)
+            return (false, nil, false)
         }
         isWorking = true
         errorMessage = nil
@@ -1066,13 +1066,17 @@ final class AppState {
                 professionalConversations = conversations
                 OfflineDataStore.saveDeferred(conversations, key: "professional-conversations", accountID: session.user.id)
             }
-            return (true, contact)
+            return (true, contact, false)
         } catch let APIError.server(_, message, code) {
+            if code == "INSUFFICIENT_CREDITS" {
+                await loadCreditAccount(force: true)
+                return (false, nil, true)
+            }
             errorMessage = proposalErrorMessage(code: code, fallback: message)
-            return (false, nil)
+            return (false, nil, false)
         } catch {
             report(error)
-            return (false, nil)
+            return (false, nil, false)
         }
     }
 

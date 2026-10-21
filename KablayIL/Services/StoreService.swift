@@ -32,6 +32,7 @@ final class StoreService {
     }
 
     static let creditProductIDs = [
+        "il.co.kablay.app.credits.20",
         "il.co.kablay.app.credits.50",
         "il.co.kablay.app.credits.100",
         "il.co.kablay.app.credits.200",
@@ -41,6 +42,7 @@ final class StoreService {
     /// Credits granted per pack. The server grants from Apple's own answer, so
     /// this is used only to describe a pack before it is bought.
     static let creditAmounts: [String: Int] = [
+        "il.co.kablay.app.credits.20": 20,
         "il.co.kablay.app.credits.50": 50,
         "il.co.kablay.app.credits.100": 100,
         "il.co.kablay.app.credits.200": 200,
