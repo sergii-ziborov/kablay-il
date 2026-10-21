@@ -319,6 +319,22 @@ final class KablayILUITests: XCTestCase {
         keepScreenshot(app, named: "\(language)-04-plumbing")
     }
 
+    @MainActor
+    func testPhoneLoginDoesNotDropDigits() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        app.tabBars.buttons["Account"].tap()
+        app.buttons["Sign in by phone"].tap()
+
+        let field = app.textFields["050-000-0000"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("0501234567")
+        XCTAssertEqual(String((field.value as? String ?? "").filter(\.isNumber)), "0501234567")
+        XCTAssertTrue(app.buttons["Get code"].isEnabled)
+    }
+
     /// Private App Review evidence for the actual StoreKit purchase screens.
     /// Credentials are supplied at test time and never stored in this project.
     @MainActor

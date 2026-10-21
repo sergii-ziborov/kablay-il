@@ -34,10 +34,6 @@ struct PhoneLoginView: View {
                         .textContentType(.telephoneNumber)
                         .disabled(codeSent)
                         .focused($focusedField, equals: .phone)
-                        .onChange(of: phone) { _, value in
-                            let formatted = formatIsraeliPhone(value)
-                            if phone != formatted { phone = formatted }
-                        }
                 }
                 if codeSent {
                     Section(appState.locale.text(he: "קוד מ-SMS", ru: "Код из SMS", en: "SMS code")) {
@@ -115,8 +111,13 @@ struct PhoneLoginView: View {
 
     private var normalizedPhone: String {
         let digits = phone.filter(\.isNumber)
-        guard digits.count == 10, digits.hasPrefix("0") else { return "" }
-        return "+972\(digits.dropFirst())"
+        if digits.count == 10, digits.hasPrefix("05") {
+            return "+972\(digits.dropFirst())"
+        }
+        if digits.count == 12, digits.hasPrefix("9725") {
+            return "+\(digits)"
+        }
+        return ""
     }
 
     private var isValid: Bool {
@@ -139,14 +140,4 @@ struct PhoneLoginView: View {
         }
     }
 
-    private func formatIsraeliPhone(_ input: String) -> String {
-        var digits = input.filter(\.isNumber)
-        if digits.hasPrefix("972") { digits = "0" + digits.dropFirst(3) }
-        digits = String(digits.prefix(10))
-        guard digits.count > 3 else { return digits }
-        let first = digits.prefix(3)
-        let rest = digits.dropFirst(3)
-        if rest.count <= 3 { return "\(first)-\(rest)" }
-        return "\(first)-\(rest.prefix(3))-\(rest.dropFirst(3))"
-    }
 }

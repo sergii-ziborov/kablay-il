@@ -293,7 +293,7 @@ final class AppState {
 
     var isAuthenticated: Bool { session != nil }
     var isProfessional: Bool {
-        session?.user.role == .specialist
+        session?.user.role == .specialist || session?.user.role == .admin
     }
     var requiresInitialAppLockSetup: Bool {
         Self.requiresInitialAppLockSetup(
@@ -307,7 +307,7 @@ final class AppState {
         guard !isRefreshingSavedContent else { return }
         isRefreshingSavedContent = true
         defer { isRefreshingSavedContent = false }
-        if isProfessional {
+        if isProfessional && workspaceMode == .professional {
             async let profile: Void = loadProfessionalProfile()
             async let leads: Void = loadProfessionalLeads()
             async let proposals: Void = loadProfessionalProposals()
@@ -1553,7 +1553,7 @@ final class AppState {
             current.user = user
             try sessionStore.saveSession(current)
             session = current
-            if user.role != .specialist {
+            if user.role != .specialist && user.role != .admin {
                 workspaceMode = .client
                 pendingBillingPage = nil
             }

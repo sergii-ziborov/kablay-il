@@ -1144,20 +1144,43 @@ final class KablayILTests: XCTestCase {
     }
 
     @MainActor
-    func testProfessionalWorkspaceAndBillingRequireSpecialistRole() {
+    func testProfessionalWorkspaceAndBillingAllowSpecialistsAndAdmins() {
         for role in [UserRole.client, .admin, .specialist] {
             let user = SessionUser(id: "role-\(role.rawValue)", name: "Test", phone: nil, role: role)
             let store = TestSessionStore(session: AuthSession(token: "role-\(role.rawValue)", user: user))
             let state = AppState(sessionStore: store)
-            XCTAssertEqual(state.isProfessional, role == .specialist)
+            let canOpenProfessionalWorkspace = role == .specialist || role == .admin
+            XCTAssertEqual(state.isProfessional, canOpenProfessionalWorkspace)
             XCTAssertEqual(state.workspaceMode, role == .specialist ? .professional : .client)
             XCTAssertEqual(
                 state.handleUniversalLink(URL(string: "kablay://billing/premium")!),
-                role == .specialist
+                canOpenProfessionalWorkspace
             )
-            XCTAssertEqual(state.pendingBillingPage == .premium, role == .specialist)
+            XCTAssertEqual(state.pendingBillingPage == .premium, canOpenProfessionalWorkspace)
             state.signOut()
         }
+    }
+
+    @MainActor
+    func testAdminKeepsProfessionalWorkspaceAfterRoleRefresh() async {
+        let session = makeMockSession { request in
+            XCTAssertEqual(request.url?.path, "/auth/me")
+            XCTAssertEqual(request.httpMethod, "GET")
+            return #"{"user":{"id":"admin-1","name":"Sergii","role":"admin"}}"#
+        }
+        let api = APIClient(
+            apiBaseURL: URL(string: "https://example.test/")!,
+            triageBaseURL: URL(string: "https://triage.example.test/")!,
+            session: session
+        )
+        let admin = SessionUser(id: "admin-1", name: "Sergii", phone: nil, role: .admin)
+        let state = AppState(api: api, sessionStore: TestSessionStore(session: AuthSession(token: "admin-token", user: admin)))
+        state.workspaceMode = .professional
+
+        await state.refreshSessionRole()
+
+        XCTAssertEqual(state.session?.user.role, .admin)
+        XCTAssertEqual(state.workspaceMode, .professional)
     }
 
     @MainActor
